@@ -21,7 +21,7 @@
  */
 #define	THREAD_OSD			0
 #define THREAD_3ACTRL		1
-#define	THREAD_MOTION		2
+#define	THREAD_MD			2
 
 #define	RUN_MODE_SAVE			0
 #define RUN_MODE_SEND_MISS		1

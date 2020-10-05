@@ -1,0 +1,117 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+服务器DEVICE接口文档
+server DEVICE interface
+（时间）
+(维护者）
+(/server/device/device_interface.h)
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+################################################################################
+宏定义（MACRO）
+################################################################################
+参数ID定义
+#define		DEVICE_CTRL_SD_STATUS					0x0000
+#define 	DEVICE_CTRL_SD_SPACE					0x0001
+#define 	DEVICE_CTRL_SD_FREE     	          	0x0002
+#define 	DEVICE_CTRL_SD_USDED	    	       	0x0003
+#define 	DEVICE_CTRL_IR_SWITCH	          		0x0010
+#define 	DEVICE_CTRL_IR_MODE		          		0x0011
+#define 	DEVICE_CTRL_NET_STATUS		 			0x0020
+#define		DEVICE_CTRL_NET_MAC						0x0021
+#define		DEVICE_CTRL_NET_IP						0x0022
+#define		DEVICE_CTRL_NET_NETMASK					0x0023
+#define 	DEVICE_CTRL_NET_GATEWAY	    			0x0024
+#define 	DEVICE_CTRL_WIFI_STATUS		 			0x0030
+#define		DEVICE_CTRL_WIFI_NAME					0x0031
+#define		DEVICE_CTRL_WIFI_RSSI					0x0032
+#define		DEVICE_CTRL_INDICATOR_SWITCH			0x0040
+#define 	DEVICE_CTRL_MOTOR_HOR_STATUS          	0x0050
+#define 	DEVICE_CTRL_MOTOR_HOR_POS	          	0x0051
+#define 	DEVICE_CTRL_MOTOR_HOR_SPEED          	0x0052
+#define 	DEVICE_CTRL_MOTOR_VER_STATUS		    0x0053
+#define 	DEVICE_CTRL_MOTOR_VER_POS	          	0x0054
+#define 	DEVICE_CTRL_MOTOR_VER_SPEED          	0x0055
+#define 	DEVICE_CTRL_SPEAKER_SWITCH	         	0x0060
+动作ID定义
+#define 	DEVICE_ACTION_SD_FORMAT	    	       	0x0000
+#define 	DEVICE_ACTION_SD_POPUP	    	       	0x0001
+
+################################################################################
+数据结构（STRUCT）
+################################################################################
+IOT参数结构体：提供给其他服务器的统一参数接口
+typedef struct video_iot_config_t {
+	(待补)
+} device_iot_config_t;
+################################################################################
+消息（MESSAGE）
+################################################################################
+#define		MSG_DEVICE_BASE						(SERVER_DEVICE<<16)
+#define		MSG_DEVICE_SIGINT					MSG_DEVICE_BASE | 0x0000
+#define		MSG_DEVICE_SIGINT_ACK				MSG_DEVICE_BASE | 0x1000
+#define		MSG_DEVICE_GET_PARA					MSG_DEVICE_BASE | 0x0010
+#define		MSG_DEVICE_GET_PARA_ACK				MSG_DEVICE_BASE | 0x1010
+#define		MSG_DEVICE_SET_PARA					MSG_DEVICE_BASE | 0x0011
+#define		MSG_DEVICE_SET_PARA_ACK				MSG_DEVICE_BASE | 0x1011
+#define		MSG_DEVICE_CTRL_DIRECT				MSG_DEVICE_BASE | 0x0012
+#define		MSG_DEVICE_CTRL_DIRECT_ACK			MSG_DEVICE_BASE | 0x1012
+#define		MSG_DEVICE_ACTION					MSG_DEVICE_BASE | 0x0020
+#define		MSG_DEVICE_ACTION_ACK				MSG_DEVICE_BASE | 0x1020
+--------------------------------------------------------------------------------
+		MSG_DEVICE_SIGINT
+消息说明：		服务器发送SIGINT系统响应到MANAGER
+发送服务器：		DEVICE
+接受服务器：		MANAGER
+传入参数：		无
+返回消息：		无
+--------------------------------------------------------------------------------
+
+--------------------------------------------------------------------------------
+		MSG_DEVICE_GET_PARA
+消息说明：		从DEVICE服务器获取IOT参数
+发送服务器：		MIIO,MISS,VIDEO
+接受服务器：		DEVICE
+传入参数：		
+	arg_pass:	message_arg_t			回传参数
+返回消息：		必须
+		MSG_DEVICE_GET_PARA_ACK
+传回参数：
+	result:		int						0:成功，其他失败
+	arg_pass:	message_arg_t			回传参数，原样拷贝
+	arg:		*device_iot_config_t	结构指针
+	arg_size:	int						arg结构大小
+--------------------------------------------------------------------------------
+
+--------------------------------------------------------------------------------
+		MSG_DEVICE_CTRL_DIRECT
+消息说明：		设置CTRL服务器的参数，可以在运行状态设置
+发送服务器：		MIIO,MISS,
+接受服务器：		DEVICE
+传入参数：
+	arg_in:		message_arg_t			传入参数
+		cat:	int						需要配置参数的ID（参照上面的参数宏）
+	arg:		void*					需要配置的参数的值
+	arg_size:	int						需要配置的参数的值的大小
+	arg_pass:	message_arg_t			回传参数
+返回消息：		必须
+		MSG_DEVICE_CTRL_DIRECT_ACK
+传回参数：
+	result:		int						0:成功，其他失败
+	arg_pass:	message_arg_t			回传参数，原样拷贝
+--------------------------------------------------------------------------------
+
+--------------------------------------------------------------------------------
+		MSG_DEVICE_ACTION
+消息说明：		运行命令
+发送服务器：		MIIO,MISS,
+接受服务器：		DEVICE
+传入参数：
+	arg_pass:	message_arg_t			回传参数
+	arg_in:		message_arg_t			传入参数
+		cat:	int						执行命令的ID
+返回消息：		必须
+		MSG_DEVICE_ACTION_ACK
+传回参数：
+	result:		int						0:成功，其他失败
+	arg_pass:	message_arg_t			回传参数，原样拷贝
+--------------------------------------------------------------------------------
