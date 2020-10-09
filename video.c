@@ -24,6 +24,7 @@
 #include "../../server/miss/miss_interface.h"
 #include "../../server/config/config_interface.h"
 #include "../../server/miio/miio_interface.h"
+#include "../../server/recorder/recorder_interface.h"
 //server header
 #include "video.h"
 #include "video_interface.h"
@@ -57,6 +58,8 @@ static void task_stop(void);
 static void task_control(void);
 static void task_control_ext(void);
 static int send_message(int receiver, message_t *msg);
+static int server_get_status(int type);
+static int server_set_status(int type, int st);
 //specific
 static int write_video_buffer(struct rts_av_buffer *data, int id, int target);
 static void video_mjpeg_func(void *priv, struct rts_av_profile *profile, struct rts_av_buffer *buffer);
@@ -73,6 +76,7 @@ static int video_main(void);
 static int send_iot_ack(message_t *org_msg, message_t *msg, int id, int receiver, int result, void *arg,int size);
 static int send_config_save(message_t *msg, int module, void *arg, int size);
 static int video_get_iot_config(video_iot_config_t *tmp);
+static int video_start_recorder_job(void);
 /*
  * %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
  * %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -82,6 +86,31 @@ static int video_get_iot_config(video_iot_config_t *tmp);
 /*
  * helper
  */
+static int video_start_recorder_job(void)
+{
+	message_t msg;
+	recorder_init_t init;
+	int ret=0;
+	/********message body********/
+	msg_init(&msg);
+	msg.message = MSG_RECORDER_START;
+	msg.sender = msg.receiver = SERVER_VIDEO;
+	init.mode = RECORDER_MODE_BY_TIME;
+	init.type = RECORDER_TYPE_NORMAL;
+	init.audio = RECORDER_AUDIO_YES;
+	memcpy( &(init.start),"0", 1);		//from now
+	memcpy( &(init.stop),"0", 1);		//from now
+	init.repeat = 1;
+	init.repeat_interval = 60;	//1 minutes
+	init.quality = RECORDER_QUALITY_HIGH;
+	init.func = NULL;
+	msg.arg = &init;
+	msg.arg_size = sizeof(recorder_init_t);
+	ret = server_recorder_message(&msg);
+	/********message body********/
+	return ret;
+}
+
 static int send_config_save(message_t *msg, int module, void *arg, int size)
 {
 	int ret=0;
@@ -145,14 +174,16 @@ static int send_message(int receiver, message_t *msg)
 		st = manager_message(msg);
 		break;
 	}
+	return st;
 }
 
 static int video_get_iot_config(video_iot_config_t *tmp)
 {
-	int ret = 0;
+	int ret = 0, st;
 	memset(tmp,0,sizeof(video_iot_config_t));
-	if( info.status <= STATUS_WAIT ) return -1;
-	tmp->on = (info.status == STATUS_RUN) ? 1:0;
+	st = info.status;
+	if( st <= STATUS_WAIT ) return -1;
+	tmp->on = ( st == STATUS_RUN ) ? 1:0;
 	if( config.h264.h264_attr.rotation == RTS_AV_ROTATION_0 ) tmp->image_roll = 0;
 //	else if( config.h264.h264_attr.rotation == RTS_AV_ROTATION_90R ) tmp->image_roll = 90;
 //	else if( config.h264.h264_attr.rotation == RTS_AV_ROTATION_90L ) tmp->image_roll = 270;
@@ -287,7 +318,6 @@ static int video_snapshot(void)
 {
 	struct rts_av_callback cb;
 	int ret = 0;
-
 	cb.func = video_mjpeg_func;
 	cb.start = 0;
 	cb.times = 1;
@@ -305,23 +335,28 @@ static int video_snapshot(void)
 
 static int *video_md_func(void *arg)
 {
-	video_md_config_t *ctrl=(video_md_config_t*)arg;
+	video_md_config_t ctrl;
 	scheduler_time_t  scheduler_time;
 	int mode;
+	int st;
 
     misc_set_thread_name("server_video_md");
     pthread_detach(pthread_self());
     //init
-    md_init(ctrl, config.profile.profile[config.profile.quality].video.width,
+    memcpy( &ctrl, (video_md_config_t*)arg, sizeof(video_md_config_t) );
+    md_init( &ctrl, config.profile.profile[config.profile.quality].video.width,
     		config.profile.profile[config.profile.quality].video.height,
 			&scheduler_time, &mode);
-    while( !info.exit ) {
-    	if( info.status != STATUS_START && info.status != STATUS_RUN )
+    misc_set_bit(&info.thread_start, THREAD_MD, 1);
+    while( 1 ) {
+    	st = info.status;
+    	if( info.exit ) break;
+    	if( st != STATUS_START && st != STATUS_RUN )
     		break;
-    	else if( info.status == STATUS_START )
+    	else if( st == STATUS_START )
     		continue;
     	usleep(10);
-    	if( ctrl->enable && md_check_scheduler_time(&scheduler_time, &mode) )
+    	if( ctrl.enable && md_check_scheduler_time(&scheduler_time, &mode) )
     		md_proc();
     }
     //release
@@ -333,24 +368,26 @@ static int *video_md_func(void *arg)
 
 static int *video_3acontrol_func(void *arg)
 {
-	video_3actrl_config_t *ctrl=(video_3actrl_config_t*)arg;
+	video_3actrl_config_t ctrl;
 	server_status_t st;
     misc_set_thread_name("server_video_3a_control");
     pthread_detach(pthread_self());
     //init
-    white_balance_init(&ctrl->awb_para);
-    exposure_init(&ctrl->ae_para);
-    focus_init(&ctrl->af_para);
-    while( !info.exit ) {
+    memcpy( &ctrl, (video_3actrl_config_t*)arg, sizeof(video_3actrl_config_t));
+    white_balance_init( &ctrl.awb_para);
+    exposure_init(&ctrl.ae_para);
+    focus_init(&ctrl.af_para);
+    misc_set_bit(&info.thread_start, THREAD_3ACTRL, 1);
+    while( 1 ) {
     	st = info.status;
+    	if( info.exit ) break;
     	if( st != STATUS_START && st != STATUS_RUN )
     		break;
     	else if( st == STATUS_START )
     		continue;
-
-    	white_balance_proc(&ctrl->awb_para,stream.frame);
-    	exposure_proc(&ctrl->ae_para,stream.frame);
-    	focus_proc(&ctrl->af_para,stream.frame);
+    	white_balance_proc( &ctrl.awb_para,stream.frame);
+    	exposure_proc(&ctrl.ae_para,stream.frame);
+    	focus_proc(&ctrl.af_para,stream.frame);
     }
     //release
     log_info("-----------thread exit: server_video_3a_control-----------");
@@ -363,24 +400,26 @@ static int *video_3acontrol_func(void *arg)
 
 static int *video_osd_func(void *arg)
 {
-	int ret=0;
-	video_osd_config_t *ctrl=(video_osd_config_t*)arg;
-    server_status_t st;
+	int ret=0, st;
+	video_osd_config_t ctrl;
     misc_set_thread_name("server_video_osd");
     pthread_detach(pthread_self());
     //init
-    ret = osd_init(ctrl, stream.osd);
+    memcpy( &ctrl,(video_osd_config_t*)arg, sizeof(video_osd_config_t));
+    ret = osd_init(&ctrl, stream.osd);
     if( ret != 0) {
     	log_err("osd init error!");
     	goto exit;
     }
-    while( !info.exit ) {
+    misc_set_bit(&info.thread_start, THREAD_OSD, 1);
+    while( 1 ) {
+    	if( info.exit ) break;
     	st = info.status;
     	if( st != STATUS_START && st != STATUS_RUN )
     		break;
     	else if( st == STATUS_START )
     		continue;
-    	osd_proc(ctrl,stream.frame);
+    	osd_proc(&ctrl,stream.frame);
     }
     //release
 exit:
@@ -489,7 +528,6 @@ static int stream_start(void)
 	 }
 	else {
 		log_info("3a control thread create successful!");
-		misc_set_bit(&info.thread_start,THREAD_3ACTRL,1);
 	}
 	if( config.osd.enable && stream.osd != -1 ) {
 		//start the osd thread
@@ -499,7 +537,6 @@ static int stream_start(void)
 		 }
 		else {
 			log_info("osd thread create successful!");
-			misc_set_bit(&info.thread_start,THREAD_OSD,1);
 		}
 	}
 	if( config.md.enable ) {
@@ -510,9 +547,9 @@ static int stream_start(void)
 		 }
 		else {
 			log_info("md thread create successful!");
-			misc_set_bit(&info.thread_start,THREAD_MD,1);
 		}
 	}
+//	video_start_recorder_job();
     return 0;
 }
 
@@ -596,6 +633,28 @@ static int video_init(void)
 	return 0;
 }
 
+void miss_set(void)
+{
+	int vq = 2;
+    /********message body********/
+	message_t msg;
+	msg_init(&msg);
+	msg.message = MSG_VIDEO_START;
+	msg.sender = msg.receiver = SERVER_MISS;
+	/****************************/
+    server_video_message(&msg);
+
+    /********message body********/
+	msg_init(&msg);
+	msg.message = MSG_VIDEO_CTRL;
+	msg.arg_in.cat = VIDEO_CTRL_QUALITY;
+	msg.arg = &vq;
+	msg.arg_size = sizeof(int);
+	msg.sender = msg.receiver = SERVER_MISS;
+	/****************************/
+    server_video_message(&msg);
+}
+
 static int video_main(void)
 {
 	int ret = 0;
@@ -606,15 +665,18 @@ static int video_main(void)
 	if (rts_av_recv(stream.h264, &buffer))
 		return 0;
 	if (buffer) {
-		if( misc_get_bit(config.profile.run_mode, RUN_MODE_SEND_MISS) ) {
+		if( misc_get_bit(config.profile.run_mode, RUN_MODE_SEND_MISS)
+				&& misc_get_bit(info.status2, RUN_MODE_SEND_MISS) ) {
 			if( write_video_buffer(buffer, MSG_MISS_VIDEO_DATA, SERVER_VIDEO) != 0 )
 				log_err("Miss ring buffer push failed!");
 		}
-		if( misc_get_bit(config.profile.run_mode, RUN_MODE_SAVE) ) {
+		if( misc_get_bit(config.profile.run_mode, RUN_MODE_SAVE)
+				&& misc_get_bit(info.status2, RUN_MODE_SAVE) ) {
 			if( write_video_buffer(&buffer, MSG_RECORDER_VIDEO_DATA, SERVER_RECORDER) != 0 )
 				log_err("Recorder ring buffer push failed!");
 		}
-		if( misc_get_bit(config.profile.run_mode, RUN_MODE_SEND_MICLOUD) ) {
+		if( misc_get_bit(config.profile.run_mode, RUN_MODE_SEND_MICLOUD)
+				&& misc_get_bit(info.status2, RUN_MODE_SEND_MICLOUD) ) {
 			if( write_video_buffer(&buffer, MSG_MICLOUD_VIDEO_DATA, SERVER_MICLOUD) != 0 )
 				log_err("Micloud ring buffer push failed!");
 		}
@@ -638,6 +700,9 @@ static int write_video_buffer(struct rts_av_buffer *data, int id, int target)
 	info.frame_index = data->frame_idx;
 	info.index = data->index;
 	info.timestamp = data->timestamp;
+	info.fps = config.profile.profile[config.profile.quality].video.denominator;
+	info.width = config.profile.profile[config.profile.quality].video.width;
+	info.height = config.profile.profile[config.profile.quality].video.height;
 	msg.arg = &info;
 	msg.arg_size = sizeof(av_data_info_t);
 	if( target == SERVER_VIDEO )
@@ -683,6 +748,49 @@ static int server_release(void)
 	return ret;
 }
 
+static int server_set_status(int type, int st)
+{
+	int ret=-1;
+	ret = pthread_rwlock_wrlock(&info.lock);
+	if(ret)	{
+		log_err("add lock fail, ret = %d", ret);
+		return ret;
+	}
+	if(type == STATUS_TYPE_STATUS) info.status = st;
+	else if(type==STATUS_TYPE_EXIT) info.exit = st;
+	else if(type==STATUS_TYPE_CONFIG) config.status = st;
+	else if(type==STATUS_TYPE_THREAD_START) info.thread_start = st;
+	else if(type==STATUS_TYPE_THREAD_EXIT) info.thread_exit = st;
+	else if(type==STATUS_TYPE_MESSAGE_LOCK) info.msg_lock = st;
+	else if(type==STATUS_TYPE_STATUS2) info.status2 = st;
+	ret = pthread_rwlock_unlock(&info.lock);
+	if (ret)
+		log_err("add unlock fail, ret = %d", ret);
+	return ret;
+}
+
+static int server_get_status(int type)
+{
+	int st;
+	int ret;
+	ret = pthread_rwlock_wrlock(&info.lock);
+	if(ret)	{
+		log_err("add lock fail, ret = %d", ret);
+		return ret;
+	}
+	if(type == STATUS_TYPE_STATUS) st = info.status;
+	else if(type== STATUS_TYPE_EXIT) st = info.exit;
+	else if(type==STATUS_TYPE_CONFIG) st = config.status;
+	else if(type==STATUS_TYPE_THREAD_START) st = info.thread_start;
+	else if(type==STATUS_TYPE_THREAD_EXIT) st = info.thread_exit;
+	else if(type==STATUS_TYPE_MESSAGE_LOCK) st = info.msg_lock;
+	else if(type==STATUS_TYPE_STATUS2) st = info.status2;
+	ret = pthread_rwlock_unlock(&info.lock);
+	if (ret)
+		log_err("add unlock fail, ret = %d", ret);
+	return st;
+}
+
 static int server_message_proc(void)
 {
 	int ret = 0, ret1 = 0;
@@ -711,7 +819,10 @@ static int server_message_proc(void)
 		return 0;
 	switch(msg.message) {
 		case MSG_VIDEO_START:
-			if( info.status != STATUS_IDLE) {
+			if( msg.sender == SERVER_MISS) misc_set_bit(&info.status2, RUN_MODE_SEND_MISS, 1);
+			if( msg.sender == SERVER_MICLOUD) misc_set_bit(&info.status2, RUN_MODE_SEND_MICLOUD, 1);
+			if( msg.sender == SERVER_RECORDER) misc_set_bit(&info.status2, RUN_MODE_SAVE, 1);
+			if( info.status == STATUS_RUN ) {
 				ret = send_iot_ack(&msg, &send_msg, MSG_VIDEO_START, msg.receiver, 0, 0, 0);
 				break;
 			}
@@ -721,8 +832,15 @@ static int server_message_proc(void)
 			info.msg_lock = 1;
 			break;
 		case MSG_VIDEO_STOP:
+			if( msg.sender == SERVER_MISS) misc_set_bit(&info.status2, RUN_MODE_SEND_MISS, 0);
+			if( msg.sender == SERVER_MICLOUD) misc_set_bit(&info.status2, RUN_MODE_SEND_MICLOUD, 0);
+			if( msg.sender == SERVER_RECORDER) misc_set_bit(&info.status2, RUN_MODE_SAVE, 0);
 			if( info.status != STATUS_RUN ) {
-				ret = send_iot_ack(&msg, &send_msg, MSG_VIDEO_STOP, msg.receiver, 0, 0, 0 );
+				ret = send_iot_ack(&msg, &send_msg, MSG_VIDEO_START, msg.receiver, 0, 0, 0);
+				break;
+			}
+			if( info.status2 > 0 ) {
+				ret = send_iot_ack(&msg, &send_msg, MSG_VIDEO_START, msg.receiver, 0, 0, 0);
 				break;
 			}
 			info.task.func = task_stop;
@@ -846,11 +964,11 @@ static void task_error(void)
 	switch( info.status ) {
 		case STATUS_ERROR:
 			log_err("!!!!!!!!error in video, restart in 5 s!");
-			info.tick = get_nowtime_ms();
+			info.tick = time_get_now_ms();
 			info.status = STATUS_NONE;
 			break;
 		case STATUS_NONE:
-			tick = get_nowtime_ms();
+			tick = time_get_now_ms();
 			if( (tick - info.tick) > 5000 ) {
 				info.exit = 1;
 				info.tick = tick;
@@ -1099,6 +1217,9 @@ static void task_default(void)
 		case STATUS_SETUP:
 			if( video_init() == 0) info.status = STATUS_IDLE;
 			else info.status = STATUS_ERROR;
+			break;
+		case STATUS_IDLE:
+//			miss_set();
 			break;
 		case STATUS_RUN:
 			if(video_main()!=0) info.status = STATUS_STOP;

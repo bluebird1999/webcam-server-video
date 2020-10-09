@@ -228,7 +228,7 @@ static int md_received(int idx, struct rts_video_md_result *result, void *priv)
 	ret = md_process_data(result, priv);
 	if(!ret) {
 		if( config.cloud_report ) {
-			now = get_nowtime_ms();
+			now = time_get_now_ms();
 			if( config.alarm_interval < 1)
 				config.alarm_interval = 1;
 			if( ( now - last_report) >= config.alarm_interval * 60000 ) {
