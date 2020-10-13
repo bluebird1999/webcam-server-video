@@ -76,7 +76,6 @@ static int video_main(void);
 static int send_iot_ack(message_t *org_msg, message_t *msg, int id, int receiver, int result, void *arg,int size);
 static int send_config_save(message_t *msg, int module, void *arg, int size);
 static int video_get_iot_config(video_iot_config_t *tmp);
-static int video_start_recorder_job(void);
 /*
  * %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
  * %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -86,31 +85,6 @@ static int video_start_recorder_job(void);
 /*
  * helper
  */
-static int video_start_recorder_job(void)
-{
-	message_t msg;
-	recorder_init_t init;
-	int ret=0;
-	/********message body********/
-	msg_init(&msg);
-	msg.message = MSG_RECORDER_START;
-	msg.sender = msg.receiver = SERVER_VIDEO;
-	init.mode = RECORDER_MODE_BY_TIME;
-	init.type = RECORDER_TYPE_NORMAL;
-	init.audio = RECORDER_AUDIO_YES;
-	memcpy( &(init.start),"0", 1);		//from now
-	memcpy( &(init.stop),"0", 1);		//from now
-	init.repeat = 1;
-	init.repeat_interval = 60;	//1 minutes
-	init.quality = RECORDER_QUALITY_HIGH;
-	init.func = NULL;
-	msg.arg = &init;
-	msg.arg_size = sizeof(recorder_init_t);
-	ret = server_recorder_message(&msg);
-	/********message body********/
-	return ret;
-}
-
 static int send_config_save(message_t *msg, int module, void *arg, int size)
 {
 	int ret=0;
@@ -549,7 +523,6 @@ static int stream_start(void)
 			log_info("md thread create successful!");
 		}
 	}
-//	video_start_recorder_job();
     return 0;
 }
 
@@ -633,28 +606,6 @@ static int video_init(void)
 	return 0;
 }
 
-void miss_set(void)
-{
-	int vq = 2;
-    /********message body********/
-	message_t msg;
-	msg_init(&msg);
-	msg.message = MSG_VIDEO_START;
-	msg.sender = msg.receiver = SERVER_MISS;
-	/****************************/
-    server_video_message(&msg);
-
-    /********message body********/
-	msg_init(&msg);
-	msg.message = MSG_VIDEO_CTRL;
-	msg.arg_in.cat = VIDEO_CTRL_QUALITY;
-	msg.arg = &vq;
-	msg.arg_size = sizeof(int);
-	msg.sender = msg.receiver = SERVER_MISS;
-	/****************************/
-    server_video_message(&msg);
-}
-
 static int video_main(void)
 {
 	int ret = 0;
@@ -672,12 +623,12 @@ static int video_main(void)
 		}
 		if( misc_get_bit(config.profile.run_mode, RUN_MODE_SAVE)
 				&& misc_get_bit(info.status2, RUN_MODE_SAVE) ) {
-			if( write_video_buffer(&buffer, MSG_RECORDER_VIDEO_DATA, SERVER_RECORDER) != 0 )
+			if( write_video_buffer(buffer, MSG_RECORDER_VIDEO_DATA, SERVER_RECORDER) != 0 )
 				log_err("Recorder ring buffer push failed!");
 		}
 		if( misc_get_bit(config.profile.run_mode, RUN_MODE_SEND_MICLOUD)
 				&& misc_get_bit(info.status2, RUN_MODE_SEND_MICLOUD) ) {
-			if( write_video_buffer(&buffer, MSG_MICLOUD_VIDEO_DATA, SERVER_MICLOUD) != 0 )
+			if( write_video_buffer(buffer, MSG_MICLOUD_VIDEO_DATA, SERVER_MICLOUD) != 0 )
 				log_err("Micloud ring buffer push failed!");
 		}
 		stream.frame++;
@@ -707,11 +658,10 @@ static int write_video_buffer(struct rts_av_buffer *data, int id, int target)
 	msg.arg_size = sizeof(av_data_info_t);
 	if( target == SERVER_VIDEO )
 		ret = server_miss_video_message(&msg);
-/*	else if( target == MSG_MICLOUD_VIDEO_DATA )
-		ret = server_micloud_video_message(&msg);
+//	else if( target == MSG_MICLOUD_VIDEO_DATA )
+//		ret = server_micloud_video_message(&msg);
 	else if( target == MSG_RECORDER_VIDEO_DATA )
 		ret = server_recorder_video_message(&msg);
-*/
 	/****************************/
 	return ret;
 }
@@ -836,11 +786,11 @@ static int server_message_proc(void)
 			if( msg.sender == SERVER_MICLOUD) misc_set_bit(&info.status2, RUN_MODE_SEND_MICLOUD, 0);
 			if( msg.sender == SERVER_RECORDER) misc_set_bit(&info.status2, RUN_MODE_SAVE, 0);
 			if( info.status != STATUS_RUN ) {
-				ret = send_iot_ack(&msg, &send_msg, MSG_VIDEO_START, msg.receiver, 0, 0, 0);
+				ret = send_iot_ack(&msg, &send_msg, MSG_VIDEO_STOP, msg.receiver, 0, 0, 0);
 				break;
 			}
 			if( info.status2 > 0 ) {
-				ret = send_iot_ack(&msg, &send_msg, MSG_VIDEO_START, msg.receiver, 0, 0, 0);
+				ret = send_iot_ack(&msg, &send_msg, MSG_VIDEO_STOP, msg.receiver, 0, 0, 0);
 				break;
 			}
 			info.task.func = task_stop;
@@ -952,6 +902,26 @@ static int server_message_proc(void)
 	return ret;
 }
 
+static int heart_beat_proc(void)
+{
+	int ret = 0;
+	message_t msg;
+	long long int tick = 0;
+	tick = time_get_now_stamp();
+	if( (tick - info.tick) > 10 ) {
+		info.tick = tick;
+	    /********message body********/
+		msg_init(&msg);
+		msg.message = MSG_MANAGER_HEARTBEAT;
+		msg.sender = msg.receiver = SERVER_VIDEO;
+		msg.arg_in.cat = info.status;
+		msg.arg_in.dog = info.thread_start;
+		ret = manager_message(&msg);
+		/***************************/
+	}
+	return ret;
+}
+
 /*
  * task
  */
@@ -964,12 +934,12 @@ static void task_error(void)
 	switch( info.status ) {
 		case STATUS_ERROR:
 			log_err("!!!!!!!!error in video, restart in 5 s!");
-			info.tick = time_get_now_ms();
+			info.tick = time_get_now_stamp();
 			info.status = STATUS_NONE;
 			break;
 		case STATUS_NONE:
-			tick = time_get_now_ms();
-			if( (tick - info.tick) > 5000 ) {
+			tick = time_get_now_stamp();
+			if( (tick - info.tick) > 5 ) {
 				info.exit = 1;
 				info.tick = tick;
 			}
@@ -1219,7 +1189,11 @@ static void task_default(void)
 			else info.status = STATUS_ERROR;
 			break;
 		case STATUS_IDLE:
-//			miss_set();
+//			info.status = STATUS_START;
+			break;
+		case STATUS_START:
+			if( stream_start()==0 ) info.status = STATUS_RUN;
+			else info.status = STATUS_ERROR;
 			break;
 		case STATUS_RUN:
 			if(video_main()!=0) info.status = STATUS_STOP;
@@ -1252,6 +1226,7 @@ static void *server_func(void)
 	while( !info.exit ) {
 		info.task.func();
 		server_message_proc();
+		heart_beat_proc();
 	}
 	if( info.exit ) {
 		while( info.thread_exit != info.thread_start ) {
