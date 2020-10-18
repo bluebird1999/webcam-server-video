@@ -16,7 +16,7 @@
 #include <rtsvideo.h>
 #include <ft2build.h>
 #include FT_FREETYPE_H
-#include "../../server/config/config_video_interface.h"
+#include "config.h"
 
 /*
  * define

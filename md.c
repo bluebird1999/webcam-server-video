@@ -16,13 +16,14 @@
 #include <rtsavapi.h>
 #include <rtsvideo.h>
 #include <rtsbmp.h>
+#include <malloc.h>
+#include <dmalloc.h>
 //program header
 #include "../../tools/tools_interface.h"
-#include "../../server/config/config_video_interface.h"
 #include "../../server/miio/miio_interface.h"
 //server header
 #include "md.h"
-
+#include "config.h"
 
 /*
  * static
@@ -235,7 +236,7 @@ static int md_received(int idx, struct rts_video_md_result *result, void *priv)
 				message_t msg;
 				/********message body********/
 				msg_init(&msg);
-				msg.message = MSG_MICLOUD_WARNING_NOTICE;
+//				msg.message = MSG_MICLOUD_WARNING_NOTICE;
 				msg.sender = msg.receiver = SERVER_VIDEO;
 				msg.arg_in.cat = 0;
 				msg.arg_in.dog = 0;

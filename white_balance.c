@@ -14,6 +14,8 @@
 #include <rtscamkit.h>
 #include <rtsavapi.h>
 #include <rtsvideo.h>
+#include <malloc.h>
+#include <dmalloc.h>
 //program header
 #include "../../tools/log.h"
 //server header

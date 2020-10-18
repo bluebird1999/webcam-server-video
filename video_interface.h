@@ -16,7 +16,7 @@
 /*
  * define
  */
-#define		SERVER_VIDEO_VERSION_STRING		"alpha-3.3"
+#define		SERVER_VIDEO_VERSION_STRING		"alpha-3.4"
 
 #define		MSG_VIDEO_BASE						(SERVER_VIDEO<<16)
 #define		MSG_VIDEO_SIGINT					MSG_VIDEO_BASE | 0x0000
@@ -34,7 +34,7 @@
 #define		MSG_VIDEO_CTRL_DIRECT_ACK			MSG_VIDEO_BASE | 0x1014
 #define		MSG_VIDEO_GET_PARA					MSG_VIDEO_BASE | 0x0015
 #define		MSG_VIDEO_GET_PARA_ACK				MSG_VIDEO_BASE | 0x1015
-//video control command from miio
+//video control command from
 //standard camera
 #define		VIDEO_CTRL_SWITCH						0x0000
 #define 	VIDEO_CTRL_IMAGE_ROLLOVER				0x0001
@@ -42,7 +42,6 @@
 #define 	VIDEO_CTRL_TIME_WATERMARK           	0x0003
 #define 	VIDEO_CTRL_WDR_MODE                 	0x0004
 #define 	VIDEO_CTRL_GLIMMER_FULL_COLOR       	0x0005
-#define 	VIDEO_CTRL_RECORDING_MODE           	0x0006
 //standard motion detection
 #define 	VIDEO_CTRL_MOTION_SWITCH          		0x0010
 #define 	VIDEO_CTRL_MOTION_ALARM_INTERVAL    	0x0011
@@ -50,10 +49,8 @@
 #define 	VIDEO_CTRL_MOTION_START		          	0x0013
 #define 	VIDEO_CTRL_MOTION_END		          	0x0014
 //qcy custom
-#define 	VIDEO_CTRL_CUSTOM_LOCAL_SAVE          	0x0100
-#define 	VIDEO_CTRL_CUSTOM_CLOUD_SAVE          	0x0101
-#define 	VIDEO_CTRL_CUSTOM_WARNING_PUSH         	0x0102
-#define 	VIDEO_CTRL_CUSTOM_DISTORTION          	0x0103
+#define 	VIDEO_CTRL_CUSTOM_WARNING_PUSH         	0x0100
+#define 	VIDEO_CTRL_CUSTOM_DISTORTION          	0x0101
 //video control command others
 #define		VIDEO_CTRL_QUALITY						0x1000
 
@@ -77,14 +74,11 @@ typedef struct video_iot_config_t {
 	int		watermark;
 	int		wdr;
 	int		glimmer;
-	int		recording;
 	int		motion_switch;
 	int		motion_alarm;
 	int		motion_sensitivity;
 	char	motion_start[MAX_SYSTEM_STRING_SIZE];
 	char	motion_end[MAX_SYSTEM_STRING_SIZE];
-	int		custom_local_save;
-	int		custom_cloud_save;
 	int		custom_warning_push;
 	int		custom_distortion;
 } video_iot_config_t;

@@ -14,7 +14,7 @@
 #include <rtscamkit.h>
 #include <rtsavapi.h>
 #include <rtsvideo.h>
-#include "../../server/config/config_video_interface.h"
+#include "config.h"
 
 /*
  * define
@@ -26,6 +26,11 @@
 #define	RUN_MODE_SAVE			0
 #define RUN_MODE_SEND_MISS		1
 #define	RUN_MODE_SEND_MICLOUD	2
+
+#define		VIDEO_INIT_CONDITION_NUM			2
+#define		VIDEO_INIT_CONDITION_CONFIG			0
+#define		VIDEO_INIT_CONDITION_MIIO_TIME		1
+
 /*
  * structure
  */

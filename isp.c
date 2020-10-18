@@ -14,6 +14,8 @@
 #include <rtscamkit.h>
 #include <rtsavapi.h>
 #include <rtsvideo.h>
+#include <malloc.h>
+#include <dmalloc.h>
 //program header
 #include "../../tools/tools_interface.h"
 //server header
@@ -74,9 +76,10 @@ int isp_set_attr(unsigned int id, int value)
 		return ret;
 	}
 	value = isp_get_valid_value(id, value, &ctrl);
-	log_info("%s min = %d, max = %d, step = %d, default = %d, cur = %d\n",
+/*	log_info("%s min = %d, max = %d, step = %d, default = %d, cur = %d\n",
 			 ctrl.name, ctrl.minimum, ctrl.maximum,
 			 ctrl.step, ctrl.default_value, ctrl.current_value);
+*/
 	ctrl.current_value = value;
 	ret = rts_av_set_isp_ctrl(id, &ctrl);
 	if (ret) {
@@ -88,9 +91,11 @@ int isp_set_attr(unsigned int id, int value)
 		log_err("get isp attr fail, ret = %d\n", ret);
 		return ret;
 	}
+/*
 	log_info("%s min = %d, max = %d, step = %d, default = %d, cur = %d\n",
 			 ctrl.name, ctrl.minimum, ctrl.maximum,
 			 ctrl.step, ctrl.default_value, ctrl.current_value);
+*/
 	return 0;
 }
 

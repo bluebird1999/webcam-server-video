@@ -14,9 +14,10 @@
 #include <rtscamkit.h>
 #include <rtsavapi.h>
 #include <rtsvideo.h>
+#include <malloc.h>
+#include <dmalloc.h>
 //program header
-#include "../../tools/log.h"
-#include "../../server/config/config_video_interface.h"
+#include "../../tools/tools_interface.h"
 //server header
 #include "exposure.h"
 

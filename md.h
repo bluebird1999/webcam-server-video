@@ -11,7 +11,7 @@
 /*
  * header
  */
-#include "../../server/config/config_video_interface.h"
+#include "config.h"
 
 /*
  * define

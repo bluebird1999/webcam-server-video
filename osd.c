@@ -29,6 +29,8 @@
 #include <rtscolor.h>
 #include <rtscamkit.h>
 #include <getopt.h>
+#include <malloc.h>
+#include <dmalloc.h>
 //program header
 #include "../../tools/log.h"
 //server header
