@@ -18,6 +18,7 @@
 #include <rtsvideo.h>
 #include <malloc.h>
 #include <dmalloc.h>
+#include <miss.h>
 //program header
 #include "../../manager/manager_interface.h"
 #include "../../server/realtek/realtek_interface.h"
@@ -25,6 +26,7 @@
 #include "../../server/miss/miss_interface.h"
 #include "../../server/miio/miio_interface.h"
 #include "../../server/recorder/recorder_interface.h"
+#include "../../server/device/device_interface.h"
 //server header
 #include "video.h"
 #include "video_interface.h"
@@ -138,7 +140,7 @@ static int video_get_iot_config(video_iot_config_t *tmp)
 	int ret = 0, st;
 	memset(tmp,0,sizeof(video_iot_config_t));
 	st = info.status;
-	if( st <= STATUS_WAIT ) return -1;
+	if( st < STATUS_WAIT ) return -1;
 	tmp->on = ( st == STATUS_RUN ) ? 1:0;
 	if( config.h264.h264_attr.rotation == RTS_AV_ROTATION_0 ) tmp->image_roll = 0;
 //	else if( config.h264.h264_attr.rotation == RTS_AV_ROTATION_90R ) tmp->image_roll = 90;
@@ -164,6 +166,8 @@ static int video_process_direct_ctrl(message_t *msg)
 {
 	int ret=0;
 	message_t send_msg;
+	device_iot_config_t tmp;
+	memset(&tmp, 0, sizeof(tmp));
 	if( msg->arg_in.cat == VIDEO_CTRL_WDR_MODE ) {
 		int temp = *((int*)(msg->arg));
 		if( temp != config.isp.wdr_mode) {
@@ -182,31 +186,33 @@ static int video_process_direct_ctrl(message_t *msg)
 			if(!ret) {
 				config.isp.smart_ir_mode = RTS_ISP_SMART_IR_MODE_AUTO;
 			}
+			tmp.day_night_mode = DAY_NIGHT_AUTO;
 		}
 		else if( temp == 1) {//close
 			ret = isp_set_attr(RTS_VIDEO_CTRL_ID_SMART_IR_MODE, RTS_ISP_SMART_IR_MODE_DISABLE);
 			if(!ret) {
 				config.isp.smart_ir_mode = RTS_ISP_SMART_IR_MODE_DISABLE;
 			}
+			tmp.day_night_mode = DAY_NIGHT_OFF;
 		}
 		else if( temp == 2) {//open
 			ret = isp_set_attr(RTS_VIDEO_CTRL_ID_SMART_IR_MODE, RTS_ISP_SMART_IR_MODE_LOW_LIGHT_PRIORITY);
 			if(!ret) {
 				config.isp.smart_ir_mode = RTS_ISP_SMART_IR_MODE_LOW_LIGHT_PRIORITY;
 			}
+			tmp.day_night_mode = DAY_NIGHT_ON;
 		}
 		if(!ret) {
 			log_info("changed the smart night mode = %d", config.isp.smart_ir_mode);
 			config_video_set(CONFIG_VIDEO_ISP, &config.isp);
 		    /********message body********/
-/*			msg_init(&send_msg);
-			send_msg.message = MSG_DEVICE_SET_PARA;
+			msg_init(&send_msg);
+			send_msg.message = MSG_DEVICE_CTRL_DIRECT;
 			send_msg.sender = send_msg.receiver = SERVER_VIDEO;
-			send_msg.arg_in.cat = DEVICE_CTRL_IR_SWITCH;
-			send_msg.arg = msg->arg;
-			send_msg.arg_size = msg->arg_size;
+			send_msg.arg_in.cat = DEVICE_CTRL_DAY_NIGHT_MODE;
+			send_msg.arg = (void *)&tmp;
+			send_msg.arg_size = sizeof(device_iot_config_t);
 			ret = server_device_message(&send_msg);
-*/
 			/***************************/
 		}
 	}
@@ -221,7 +227,7 @@ static int video_process_direct_ctrl(message_t *msg)
 			}
 		}
 	}
-	ret = send_iot_ack(msg, &send_msg, MSG_VIDEO_CTRL_DIRECT, msg->receiver, ret, 0, 0);
+	ret = send_iot_ack(msg, &send_msg, MSG_VIDEO_CTRL_DIRECT_ACK, msg->receiver, ret, 0, 0);
 	return ret;
 }
 
@@ -601,11 +607,25 @@ static int write_video_buffer(struct rts_av_buffer *data, int id, int target)
 	msg.extra_size = data->bytesused;
 	info.flag = data->flags;
 	info.frame_index = data->frame_idx;
-	info.index = data->index;
-	info.timestamp = data->timestamp;
+	info.timestamp = data->timestamp / 1000;
 	info.fps = config.profile.profile[config.profile.quality].video.denominator;
 	info.width = config.profile.profile[config.profile.quality].video.width;
 	info.height = config.profile.profile[config.profile.quality].video.height;
+   	info.flag |= FLAG_STREAM_TYPE_LIVE << 11;
+   	if(config.osd.enable)
+   		info.flag |= FLAG_WATERMARK_TIMESTAMP_EXIST << 13;
+   	else
+   		info.flag |= FLAG_WATERMARK_TIMESTAMP_NOT_EXIST << 13;
+    if( misc_get_bit(data->flags, 0/*RTSTREAM_PKT_FLAG_KEY*/) )// I frame
+    	info.flag |= FLAG_FRAME_TYPE_IFRAME << 0;
+    else
+    	info.flag |= FLAG_FRAME_TYPE_PBFRAME << 0;
+    if( config.profile.quality==0 )
+        info.flag |= FLAG_RESOLUTION_VIDEO_360P << 17;
+    else if( config.profile.quality==1 )
+        info.flag |= FLAG_RESOLUTION_VIDEO_480P << 17;
+    else if( config.profile.quality==2 )
+        info.flag |= FLAG_RESOLUTION_VIDEO_1080P << 17;
 	msg.arg = &info;
 	msg.arg_size = sizeof(av_data_info_t);
 	if( target == SERVER_VIDEO )
@@ -870,6 +890,7 @@ static int heart_beat_proc(void)
 		msg.sender = msg.receiver = SERVER_VIDEO;
 		msg.arg_in.cat = info.status;
 		msg.arg_in.dog = info.thread_start;
+		msg.arg_in.duck = info.thread_exit;
 		ret = manager_message(&msg);
 		/***************************/
 	}
@@ -1125,20 +1146,23 @@ static void task_default(void)
 	int ret = 0;
 	switch( info.status){
 		case STATUS_NONE:
-			ret = config_video_read(&config);
-			if( !ret && misc_full_bit(config.status, CONFIG_VIDEO_MODULE_NUM) ) {
-				misc_set_bit(&info.thread_exit, VIDEO_INIT_CONDITION_CONFIG, 1);
+			if( !misc_get_bit( info.thread_exit, VIDEO_INIT_CONDITION_CONFIG ) ) {
+				ret = config_video_read(&config);
+				if( !ret && misc_full_bit( config.status, CONFIG_VIDEO_MODULE_NUM) ) {
+					misc_set_bit(&info.thread_exit, VIDEO_INIT_CONDITION_CONFIG, 1);
+				}
+				else {
+					info.status = STATUS_ERROR;
+					break;
+				}
 			}
-			else {
-				info.status = STATUS_ERROR;
-				break;
-			}
-			info.status = STATUS_WAIT;
+			if( misc_full_bit( info.thread_exit, VIDEO_INIT_CONDITION_NUM ) )
+				info.status = STATUS_WAIT;
+			else
+				usleep(100000);
 			break;
 		case STATUS_WAIT:
-			if( misc_full_bit(info.thread_exit, VIDEO_INIT_CONDITION_NUM))
-				info.status = STATUS_SETUP;
-			else usleep(1000);
+			info.status = STATUS_SETUP;
 			break;
 		case STATUS_SETUP:
 			if( video_init() == 0) info.status = STATUS_IDLE;
