@@ -34,15 +34,7 @@
 /*
  * structure
  */
-typedef struct video_stream_t {
-	//channel
-	int isp;
-	int h264;
-	int	jpg;
-	int osd;
-	//data
-	int	frame;
-} video_stream_t;
+
 /*
  * function
  */

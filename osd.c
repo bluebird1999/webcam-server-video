@@ -393,7 +393,7 @@ static int osd_set_osd2_color_table(void)
 /*
  * interface
  */
-int osd_proc(video_osd_config_t *ctrl, int frame)
+int video_osd_proc(video_osd_config_t *ctrl, int frame)
 {
 	char now_time[9] = "00:00:00";
 	char now_date[11] = "2017:01:01";
@@ -445,14 +445,14 @@ int osd_proc(video_osd_config_t *ctrl, int frame)
 		ret = osd_set_osd2_timedate(&text_date, 1);
 		if (ret < 0) {
 			log_err("%s, set osd2 attr fail\n", __func__);
-			osd_release();
+			video_osd_release();
 			return -1;
 		}
 next:
 		ret = osd_set_osd2_timedate(&text_tm, 0);
 		if (ret < 0) {
 			log_err("%s, set osd2 attr fail\n", __func__);
-			osd_release();
+			video_osd_release();
 			return -1;
 		}
 		last_frame = frame;
@@ -463,7 +463,7 @@ next:
 	return ret;
 }
 
-int osd_init(video_osd_config_t *ctrl, int stream)
+int video_osd_init(video_osd_config_t *ctrl, int stream)
 {
 	int ret=0;
 	char face_path[32];
@@ -483,19 +483,19 @@ int osd_init(video_osd_config_t *ctrl, int stream)
 	osd_run.ipattern = (unsigned char *)calloc( ctrl->time_pixel_size * ctrl->time_pixel_size / 2, sizeof(patt) );
 	if (!osd_run.ipattern) {
 		log_err("%s calloc fail\n", __func__);
-		osd_release();
+		video_osd_release();
 		return -1;
 	}
 	osd_run.image2222 = (unsigned char *)calloc( 20 * ctrl->time_pixel_size * ctrl->time_pixel_size / 2, 1 );
 	if (!osd_run.image2222) {
 		log_err("%s calloc fail\n", __func__);
-		osd_release();
+		video_osd_release();
 		return -1;
 	}
 	osd_run.image8888 = (unsigned char *)calloc( 20 * 4 * ctrl->time_pixel_size * ctrl->time_pixel_size / 2, 1);
 	if (!osd_run.image8888) {
 		log_err("%s calloc fail\n", __func__);
-		osd_release();
+		video_osd_release();
 		return -1;
 	}
 	for (i = 0; i < sizeof(patt); i++) {
@@ -504,26 +504,26 @@ int osd_init(video_osd_config_t *ctrl, int stream)
 	ret = rts_av_query_osd2(osd_run.stream, &osd_run.osd_attr);
 	if (ret < 0) {
 		log_err("%s, query osd2 attr fail\n", __func__);
-		osd_release();
+		video_osd_release();
 		return -1;
 	}
 	ret = osd_set_osd2_color_table();
 	if (ret < 0) {
 		log_err("%s, osd2 setup color table fail\n", __func__);
-		osd_release();
+		video_osd_release();
 		return -1;
 	}
 /*	ret = osd_set_osd2_text();
 	if (ret < 0) {
 		log_err("%s, osd2 setup text fail\n", __func__);
-		osd_release();
+		video_osd_release();
 		return -1;
 	}
 */
 	return ret;
 }
 
-int osd_release(void)
+int video_osd_release(void)
 {
 	int ret=0;
 	if( osd_run.ipattern ) {

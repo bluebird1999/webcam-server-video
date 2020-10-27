@@ -24,8 +24,8 @@
 /*
  * function
  */
-int focus_int(isp_af_para_t *ctrl);
-int focus_release(void);
-int focus_proc(isp_af_para_t *ctrl, int frame);
+int video_focus_int(isp_af_para_t *ctrl);
+int video_focus_release(void);
+int video_focus_proc(isp_af_para_t *ctrl, int frame);
 
 #endif /* SERVER_VIDEO_FOCUS_H_ */

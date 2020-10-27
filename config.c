@@ -263,7 +263,7 @@ static int video_config_save(void)
 	return ret;
 }
 
-int config_video_read(video_config_t *vconf)
+int video_config_video_read(video_config_t *vconf)
 {
 	int ret,ret1=0;
 	pthread_rwlock_init(&lock, NULL);
@@ -328,7 +328,7 @@ int config_video_read(video_config_t *vconf)
 	return ret1;
 }
 
-int config_video_set(int module, void* arg)
+int video_config_video_set(int module, void* arg)
 {
 	int ret = 0;
 	ret = pthread_rwlock_wrlock(&lock);
@@ -342,7 +342,7 @@ int config_video_set(int module, void* arg)
 		msg_init(&msg);
 		msg.message = MSG_MANAGER_TIMER_ADD;
 		msg.sender = SERVER_VIDEO;
-		msg.arg_in.cat = 60000;	//1min
+		msg.arg_in.cat = 30000;	//1min
 		msg.arg_in.dog = 0;
 		msg.arg_in.duck = 0;
 		msg.arg_in.handler = &video_config_save;
@@ -377,7 +377,7 @@ int config_video_set(int module, void* arg)
 	return ret;
 }
 
-int config_video_get_config_status(int module)
+int video_config_video_get_config_status(int module)
 {
 	int st,ret=0;
 	ret = pthread_rwlock_wrlock(&lock);

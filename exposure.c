@@ -114,7 +114,7 @@ static int exposure_set_manual_exposure_time(int et)
 /*
  * interface
  */
-int exposure_proc(isp_ae_para_t *ctrl, int frame)
+int video_exposure_proc(isp_ae_para_t *ctrl, int frame)
 {
 	int ret=0;
 	if( (frame - last_frame) > AE_FRAME_INTERVAL ) {
@@ -129,7 +129,7 @@ int exposure_proc(isp_ae_para_t *ctrl, int frame)
 	return ret;
 }
 
-int exposure_init(isp_ae_para_t *ctrl)
+int video_exposure_init(isp_ae_para_t *ctrl)
 {
 	int ret=0;
     last_frame = 0;
@@ -160,7 +160,7 @@ int exposure_init(isp_ae_para_t *ctrl)
 	return ret;
 }
 
-int exposure_release(void)
+int video_exposure_release(void)
 {
 	int ret=0;
     last_frame = 0;

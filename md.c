@@ -335,7 +335,7 @@ static int md_disable(void)
 /*
  * interface
  */
-int md_check_scheduler_time(scheduler_time_t *st, int *mode)
+int video_md_check_scheduler_time(scheduler_time_t *st, int *mode)
 {
 	int ret = 0;
     time_t timep;
@@ -352,7 +352,7 @@ int md_check_scheduler_time(scheduler_time_t *st, int *mode)
     return ret;
 }
 
-int md_proc(void)
+int video_md_proc(void)
 {
 	int ret;
 	static int status = 0;
@@ -377,7 +377,7 @@ int md_proc(void)
 	return 0;
 }
 
-int md_init(video_md_config_t *md_config, int width, int height, scheduler_time_t *st, int *md)
+int video_md_init(video_md_config_t *md_config, int width, int height, scheduler_time_t *st, int *md)
 {
 	int ret;
 	int mask;
@@ -387,7 +387,7 @@ int md_init(video_md_config_t *md_config, int width, int height, scheduler_time_
 	ret = rts_av_query_isp_md(&attr, width, height);
 	if (ret) {
 		log_err("query isp md attr fail, ret = %d\n", ret);
-		md_release();
+		video_md_release();
 	}
 	mask = RTS_VIDEO_MD_DATA_TYPE_AVGY |
            RTS_VIDEO_MD_DATA_TYPE_RLTPRE |
@@ -398,7 +398,7 @@ int md_init(video_md_config_t *md_config, int width, int height, scheduler_time_
 	ret = md_enable(config.polling, config.trig, mask, width, height, config.sensitivity, &bmp);
 	if (ret) {
 		log_err("enable md fail\n");
-		md_release();
+		video_md_release();
 	}
 	if (config.polling) {
 		int i;
@@ -413,7 +413,7 @@ int md_init(video_md_config_t *md_config, int width, int height, scheduler_time_
 	}
 }
 
-int md_release(void)
+int video_md_release(void)
 {
 	if( config.polling)
 		rts_av_uninit_md_result(&result);

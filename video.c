@@ -63,6 +63,7 @@ static void task_control_ext(void);
 static int send_message(int receiver, message_t *msg);
 static int server_get_status(int type);
 static int server_set_status(int type, int st);
+static void server_thread_termination(int sign);
 //specific
 static int write_video_buffer(struct rts_av_buffer *data, int id, int target);
 static void video_mjpeg_func(void *priv, struct rts_av_profile *profile, struct rts_av_buffer *buffer);
@@ -142,10 +143,14 @@ static int video_get_iot_config(video_iot_config_t *tmp)
 	st = info.status;
 	if( st < STATUS_WAIT ) return -1;
 	tmp->on = ( st == STATUS_RUN ) ? 1:0;
+	/*
 	if( config.h264.h264_attr.rotation == RTS_AV_ROTATION_0 ) tmp->image_roll = 0;
-//	else if( config.h264.h264_attr.rotation == RTS_AV_ROTATION_90R ) tmp->image_roll = 90;
-//	else if( config.h264.h264_attr.rotation == RTS_AV_ROTATION_90L ) tmp->image_roll = 270;
+	else if( config.h264.h264_attr.rotation == RTS_AV_ROTATION_90R ) tmp->image_roll = 90;
+	else if( config.h264.h264_attr.rotation == RTS_AV_ROTATION_90L ) tmp->image_roll = 270;
 	else if( config.h264.h264_attr.rotation == RTS_AV_ROTATION_180 ) tmp->image_roll = 180;
+	*/
+	if( config.isp.flip == 0) tmp->image_roll = 0;
+	else if( config.isp.flip == 1) tmp->image_roll = 180;
 	if( config.isp.smart_ir_mode == RTS_ISP_SMART_IR_MODE_AUTO) tmp->night = 0;
 	else if( config.isp.smart_ir_mode == RTS_ISP_SMART_IR_MODE_DISABLE) tmp->night = 1;
 	else if( config.isp.smart_ir_mode == RTS_ISP_SMART_IR_MODE_LOW_LIGHT_PRIORITY) tmp->night = 2;
@@ -171,32 +176,57 @@ static int video_process_direct_ctrl(message_t *msg)
 	if( msg->arg_in.cat == VIDEO_CTRL_WDR_MODE ) {
 		int temp = *((int*)(msg->arg));
 		if( temp != config.isp.wdr_mode) {
-			ret = isp_set_attr(RTS_VIDEO_CTRL_ID_WDR_MODE, temp);
+			ret = video_isp_set_attr(RTS_VIDEO_CTRL_ID_WDR_MODE, temp);
 			if(!ret) {
 				config.isp.wdr_mode = *((int*)(msg->arg));
 				log_info("changed the wdr = %d", config.isp.wdr_mode);
-				config_video_set(CONFIG_VIDEO_ISP, &config.isp);
+				video_config_video_set(CONFIG_VIDEO_ISP, &config.isp);
+			}
+		}
+	}
+	if( msg->arg_in.cat == VIDEO_CTRL_IMAGE_ROLLOVER ) {
+		int temp = *((int*)(msg->arg));
+		if( temp == 0 && (config.isp.flip!=0 || config.isp.mirror!=0) ) {
+			ret = video_isp_set_attr(RTS_VIDEO_CTRL_ID_FLIP, 0);
+			ret |= video_isp_set_attr(RTS_VIDEO_CTRL_ID_MIRROR, 0);
+			if(!ret) {
+				config.isp.flip = 0;
+				config.isp.mirror = 0;
+				log_info("changed the isp flip = %d", config.isp.flip);
+				log_info("changed the isp mirror = %d", config.isp.mirror);
+				video_config_video_set(CONFIG_VIDEO_ISP, &config.isp);
+			}
+		}
+		else if( temp == 180 && (config.isp.flip!=1 || config.isp.mirror!=1) ) {
+			ret = video_isp_set_attr(RTS_VIDEO_CTRL_ID_FLIP, 1);
+			ret |= video_isp_set_attr(RTS_VIDEO_CTRL_ID_MIRROR, 1);
+			if(!ret) {
+				config.isp.flip = 1;
+				config.isp.mirror = 1;
+				log_info("changed the isp flip = %d", config.isp.flip);
+				log_info("changed the isp mirror = %d", config.isp.mirror);
+				video_config_video_set(CONFIG_VIDEO_ISP, &config.isp);
 			}
 		}
 	}
 	else if( msg->arg_in.cat == VIDEO_CTRL_NIGHT_SHOT ) {
 		int temp = *((int*)(msg->arg));
 		if( temp == 0) {	//automode
-			ret = isp_set_attr(RTS_VIDEO_CTRL_ID_SMART_IR_MODE, RTS_ISP_SMART_IR_MODE_AUTO);
+			ret = video_isp_set_attr(RTS_VIDEO_CTRL_ID_SMART_IR_MODE, RTS_ISP_SMART_IR_MODE_AUTO);
 			if(!ret) {
 				config.isp.smart_ir_mode = RTS_ISP_SMART_IR_MODE_AUTO;
 			}
 			tmp.day_night_mode = DAY_NIGHT_AUTO;
 		}
 		else if( temp == 1) {//close
-			ret = isp_set_attr(RTS_VIDEO_CTRL_ID_SMART_IR_MODE, RTS_ISP_SMART_IR_MODE_DISABLE);
+			ret = video_isp_set_attr(RTS_VIDEO_CTRL_ID_SMART_IR_MODE, RTS_ISP_SMART_IR_MODE_DISABLE);
 			if(!ret) {
 				config.isp.smart_ir_mode = RTS_ISP_SMART_IR_MODE_DISABLE;
 			}
 			tmp.day_night_mode = DAY_NIGHT_OFF;
 		}
 		else if( temp == 2) {//open
-			ret = isp_set_attr(RTS_VIDEO_CTRL_ID_SMART_IR_MODE, RTS_ISP_SMART_IR_MODE_LOW_LIGHT_PRIORITY);
+			ret = video_isp_set_attr(RTS_VIDEO_CTRL_ID_SMART_IR_MODE, RTS_ISP_SMART_IR_MODE_LOW_LIGHT_PRIORITY);
 			if(!ret) {
 				config.isp.smart_ir_mode = RTS_ISP_SMART_IR_MODE_LOW_LIGHT_PRIORITY;
 			}
@@ -204,7 +234,7 @@ static int video_process_direct_ctrl(message_t *msg)
 		}
 		if(!ret) {
 			log_info("changed the smart night mode = %d", config.isp.smart_ir_mode);
-			config_video_set(CONFIG_VIDEO_ISP, &config.isp);
+			video_config_video_set(CONFIG_VIDEO_ISP, &config.isp);
 		    /********message body********/
 			msg_init(&send_msg);
 			send_msg.message = MSG_DEVICE_CTRL_DIRECT;
@@ -219,11 +249,11 @@ static int video_process_direct_ctrl(message_t *msg)
 	else if( msg->arg_in.cat == VIDEO_CTRL_CUSTOM_DISTORTION ) {
 		int temp = *((int*)(msg->arg));
 		if( temp != config.isp.ldc ) {
-			ret = isp_set_attr(RTS_VIDEO_CTRL_ID_LDC, temp );
+			ret = video_isp_set_attr(RTS_VIDEO_CTRL_ID_LDC, temp );
 			if(!ret) {
 				config.isp.ldc = temp;
 				log_info("changed the lens distortion correction = %d", config.isp.ldc);
-				config_video_set(CONFIG_VIDEO_ISP, &config.isp);
+				video_config_video_set(CONFIG_VIDEO_ISP, &config.isp);
 			}
 		}
 	}
@@ -272,12 +302,14 @@ static int *video_md_func(void *arg)
 	scheduler_time_t  scheduler_time;
 	int mode;
 	int st;
-
+    signal(SIGINT, server_thread_termination);
+    signal(SIGTERM, server_thread_termination);
+//    signal(SIGSEGV, manager_sigsegv);
     misc_set_thread_name("server_video_md");
     pthread_detach(pthread_self());
     //init
     memcpy( &ctrl, (video_md_config_t*)arg, sizeof(video_md_config_t) );
-    md_init( &ctrl, config.profile.profile[config.profile.quality].video.width,
+    video_md_init( &ctrl, config.profile.profile[config.profile.quality].video.width,
     		config.profile.profile[config.profile.quality].video.height,
 			&scheduler_time, &mode);
     misc_set_bit(&info.thread_start, THREAD_MD, 1);
@@ -289,12 +321,12 @@ static int *video_md_func(void *arg)
     	else if( st == STATUS_START )
     		continue;
     	usleep(10);
-    	if( ctrl.enable && md_check_scheduler_time(&scheduler_time, &mode) )
-    		md_proc();
+    	if( ctrl.enable && video_md_check_scheduler_time(&scheduler_time, &mode) )
+    		video_md_proc();
     }
     //release
     log_info("-----------thread exit: server_video_md-----------");
-    md_release();
+    video_md_release();
     misc_set_bit(&info.thread_start, THREAD_MD, 0);
     pthread_exit(0);
 }
@@ -303,13 +335,16 @@ static int *video_3acontrol_func(void *arg)
 {
 	video_3actrl_config_t ctrl;
 	server_status_t st;
+    signal(SIGINT, server_thread_termination);
+    signal(SIGTERM, server_thread_termination);
+ //   signal(SIGSEGV, manager_sigsegv);
     misc_set_thread_name("server_video_3a_control");
     pthread_detach(pthread_self());
     //init
     memcpy( &ctrl, (video_3actrl_config_t*)arg, sizeof(video_3actrl_config_t));
-    white_balance_init( &ctrl.awb_para);
-    exposure_init(&ctrl.ae_para);
-    focus_init(&ctrl.af_para);
+    video_white_balance_init( &ctrl.awb_para);
+    video_exposure_init(&ctrl.ae_para);
+    video_focus_init(&ctrl.af_para);
     misc_set_bit(&info.thread_start, THREAD_3ACTRL, 1);
     while( 1 ) {
     	st = info.status;
@@ -318,15 +353,15 @@ static int *video_3acontrol_func(void *arg)
     		break;
     	else if( st == STATUS_START )
     		continue;
-    	white_balance_proc( &ctrl.awb_para,stream.frame);
-    	exposure_proc(&ctrl.ae_para,stream.frame);
-    	focus_proc(&ctrl.af_para,stream.frame);
+    	video_white_balance_proc( &ctrl.awb_para,stream.frame);
+    	video_exposure_proc(&ctrl.ae_para,stream.frame);
+    	video_focus_proc(&ctrl.af_para,stream.frame);
     }
     //release
     log_info("-----------thread exit: server_video_3a_control-----------");
-    white_balance_release();
-    exposure_release();
-    focus_release();
+    video_white_balance_release();
+    video_exposure_release();
+    video_focus_release();
     misc_set_bit(&info.thread_start, THREAD_3ACTRL, 0);
     pthread_exit(0);
 }
@@ -335,11 +370,14 @@ static int *video_osd_func(void *arg)
 {
 	int ret=0, st;
 	video_osd_config_t ctrl;
+    signal(SIGINT, server_thread_termination);
+    signal(SIGTERM, server_thread_termination);
+//    signal(SIGSEGV, manager_sigsegv);
     misc_set_thread_name("server_video_osd");
     pthread_detach(pthread_self());
     //init
     memcpy( &ctrl,(video_osd_config_t*)arg, sizeof(video_osd_config_t));
-    ret = osd_init(&ctrl, stream.osd);
+    ret = video_osd_init(&ctrl, stream.osd);
     if( ret != 0) {
     	log_err("osd init error!");
     	goto exit;
@@ -352,12 +390,12 @@ static int *video_osd_func(void *arg)
     		break;
     	else if( st == STATUS_START )
     		continue;
-    	osd_proc(&ctrl,stream.frame);
+    	video_osd_proc(&ctrl,stream.frame);
     }
     //release
 exit:
     log_info("-----------thread exit: server_video_osd-----------");
-    osd_release();
+    video_osd_release();
     misc_set_bit(&info.thread_start, THREAD_OSD, 0);
     pthread_exit(0);
 }
@@ -561,7 +599,7 @@ static int video_init(void)
     		return -1;
     	}
 	}
-	isp_init(&config.isp);
+	video_isp_init(&config.isp);
 	return 0;
 }
 
@@ -836,12 +874,11 @@ static int server_message_proc(void)
 			else if( msg.arg_in.cat == VIDEO_CTRL_IMAGE_ROLLOVER ) {
 				int temp =  *((int*)(msg.arg));
 				if( ( (temp == 0) && (config.h264.h264_attr.rotation == RTS_AV_ROTATION_0) ) ||
-					( ( temp == 180) && (config.h264.h264_attr.rotation == RTS_AV_ROTATION_180) )	) {
+					( ( temp == 180) && (config.h264.h264_attr.rotation == RTS_AV_ROTATION_180)) ||
+					( (temp == 90) && (config.h264.h264_attr.rotation == RTS_AV_ROTATION_90R)) ||
+					( (temp == 270) && (config.h264.h264_attr.rotation == RTS_AV_ROTATION_90L))
+				) {
 					ret = send_iot_ack(&msg, &send_msg, MSG_VIDEO_CTRL_EXT, msg.receiver, 0, 0, 0 );
-					break;
-				}
-				else {
-					ret = send_iot_ack(&msg, &send_msg, MSG_VIDEO_CTRL_EXT, msg.receiver, -1, 0, 0 );
 					break;
 				}
 
@@ -948,16 +985,16 @@ static void task_control_ext(void)
 			if( info.task.msg.arg_in.cat == VIDEO_CTRL_TIME_WATERMARK ) {
 				config.osd.enable = *((int*)(info.task.msg.arg));
 				log_info("changed the osd switch = %d", config.osd.enable);
-				config_video_set(CONFIG_VIDEO_OSD,  &config.osd);
+				video_config_video_set(CONFIG_VIDEO_OSD,  &config.osd);
 			}
 			else if( info.task.msg.arg_in.cat == VIDEO_CTRL_IMAGE_ROLLOVER ) {
 				int temp = *((int*)(info.task.msg.arg));
 				if( temp == 0 ) config.h264.h264_attr.rotation = RTS_AV_ROTATION_0;
-//				else if( temp == 90 ) config.h264.h264_attr.rotation = RTS_AV_ROTATION_90R;
-//				else if( temp == 270 ) config.h264.h264_attr.rotation = RTS_AV_ROTATION_90L;
+				else if( temp == 90 ) config.h264.h264_attr.rotation = RTS_AV_ROTATION_90R;
+				else if( temp == 270 ) config.h264.h264_attr.rotation = RTS_AV_ROTATION_90L;
 				else if( temp == 180 ) config.h264.h264_attr.rotation = RTS_AV_ROTATION_180;
 				log_info("changed the rotation = %d", config.h264.h264_attr.rotation );
-				config_video_set(CONFIG_VIDEO_H264,  &config.osd);
+				video_config_video_set(CONFIG_VIDEO_H264,  &config.h264);
 			}
 			para_set = 1;
 			if( info.task.start == STATUS_WAIT ) goto success_exit;
@@ -1012,37 +1049,37 @@ static void task_control(void)
 			if( info.task.msg.arg_in.cat == VIDEO_CTRL_QUALITY ) {
 				config.profile.quality = *((int*)(info.task.msg.arg));
 				log_info("changed the quality = %d", config.profile.quality);
-				config_video_set(CONFIG_VIDEO_PROFILE, &config.profile);
+				video_config_video_set(CONFIG_VIDEO_PROFILE, &config.profile);
 			}
 			else if( info.task.msg.arg_in.cat == VIDEO_CTRL_MOTION_SWITCH ) {
 				config.md.enable = *((int*)(info.task.msg.arg));
 				log_info("changed the motion switch = %d", config.md.enable);
-				config_video_set(CONFIG_VIDEO_MD, &config.md);
+				video_config_video_set(CONFIG_VIDEO_MD, &config.md);
 			}
 			else if( info.task.msg.arg_in.cat == VIDEO_CTRL_MOTION_ALARM_INTERVAL ) {
 				config.md.alarm_interval = *((int*)(info.task.msg.arg));
 				log_info("changed the motion detection alarm interval = %d", config.md.alarm_interval);
-				config_video_set(CONFIG_VIDEO_MD, &config.md);
+				video_config_video_set(CONFIG_VIDEO_MD, &config.md);
 			}
 			else if( info.task.msg.arg_in.cat == VIDEO_CTRL_MOTION_SENSITIVITY ) {
 				config.md.sensitivity = *((int*)(info.task.msg.arg));
 				log_info("changed the motion detection sensitivity = %d", config.md.sensitivity);
-				config_video_set(CONFIG_VIDEO_MD, &config.md);
+				video_config_video_set(CONFIG_VIDEO_MD, &config.md);
 			}
 			else if( info.task.msg.arg_in.cat == VIDEO_CTRL_MOTION_START ) {
 				strcpy( config.md.start, (char*)(info.task.msg.arg) );
 				log_info("changed the motion detection start = %s", config.md.start);
-				config_video_set(CONFIG_VIDEO_MD, &config.md);
+				video_config_video_set(CONFIG_VIDEO_MD, &config.md);
 			}
 			else if( info.task.msg.arg_in.cat == VIDEO_CTRL_MOTION_END ) {
 				strcpy( config.md.end, (char*)(info.task.msg.arg) );
 				log_info("changed the motion detection end = %s", config.md.end);
-				config_video_set(CONFIG_VIDEO_MD, &config.md);
+				video_config_video_set(CONFIG_VIDEO_MD, &config.md);
 			}
 			else if( info.task.msg.arg_in.cat == VIDEO_CTRL_CUSTOM_WARNING_PUSH ) {
 				config.md.cloud_report = *((int*)(info.task.msg.arg));
 				log_info("changed the motion detection cloud push = %d", config.md.cloud_report);
-				config_video_set(CONFIG_VIDEO_MD, &config.md);
+				video_config_video_set(CONFIG_VIDEO_MD, &config.md);
 			    /********message body********/
 /*	wait for other server
 				msg_init(&msg);
@@ -1147,7 +1184,7 @@ static void task_default(void)
 	switch( info.status){
 		case STATUS_NONE:
 			if( !misc_get_bit( info.thread_exit, VIDEO_INIT_CONDITION_CONFIG ) ) {
-				ret = config_video_read(&config);
+				ret = video_config_video_read(&config);
 				if( !ret && misc_full_bit( config.status, CONFIG_VIDEO_MODULE_NUM) ) {
 					misc_set_bit(&info.thread_exit, VIDEO_INIT_CONDITION_CONFIG, 1);
 				}
@@ -1197,6 +1234,7 @@ static void *server_func(void)
 {
     signal(SIGINT, server_thread_termination);
     signal(SIGTERM, server_thread_termination);
+ //   signal(SIGSEGV, manager_sigsegv);
 	misc_set_thread_name("server_video");
 	pthread_detach(pthread_self());
 	//default task

@@ -46,7 +46,7 @@ static int focus_set(int ws, int wn)
 /*
  * interface
  */
-int focus_proc(isp_af_para_t *ctrl, int frame)
+int video_focus_proc(isp_af_para_t *ctrl, int frame)
 {
 	int ret=0;
 	struct rts_isp_awb_gain ct_gain;
@@ -62,7 +62,7 @@ int focus_proc(isp_af_para_t *ctrl, int frame)
 	return ret;
 }
 
-int focus_init(isp_af_para_t *ctrl)
+int video_focus_init(isp_af_para_t *ctrl)
 {
 	int ret=0;
     last_frame = 0;
@@ -75,7 +75,7 @@ int focus_init(isp_af_para_t *ctrl)
 	return ret;
 }
 
-int focus_release(void)
+int video_focus_release(void)
 {
 	int ret=0;
     last_frame = 0;

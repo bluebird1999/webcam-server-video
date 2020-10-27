@@ -25,8 +25,8 @@
 /*
  * function
  */
-int isp_get_attr(unsigned int id);
-int isp_set_attr(unsigned int id, int value);
-int isp_init(video_isp_config_t *ctrl);
+int video_isp_get_attr(unsigned int id);
+int video_isp_set_attr(unsigned int id, int value);
+int video_isp_init(video_isp_config_t *ctrl);
 
 #endif /* SERVER_VIDEO_ISP_H_ */

@@ -16,7 +16,7 @@
 /*
  * define
  */
-#define		SERVER_VIDEO_VERSION_STRING		"alpha-3.5"
+#define		SERVER_VIDEO_VERSION_STRING		"alpha-3.6"
 
 #define		MSG_VIDEO_BASE						(SERVER_VIDEO<<16)
 #define		MSG_VIDEO_SIGINT					MSG_VIDEO_BASE | 0x0000
@@ -82,6 +82,16 @@ typedef struct video_iot_config_t {
 	int		custom_warning_push;
 	int		custom_distortion;
 } video_iot_config_t;
+
+typedef struct video_stream_t {
+	//channel
+	int isp;
+	int h264;
+	int	jpg;
+	int osd;
+	//data
+	int	frame;
+} video_stream_t;
 
 /*
  * function

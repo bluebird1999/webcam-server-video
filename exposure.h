@@ -25,8 +25,8 @@
 /*
  * function
  */
-int exposure_int(isp_ae_para_t *ctrl);
-int exposure_release(void);
-int exposure_proc(isp_ae_para_t *ctrl, int frame);
+int video_exposure_int(isp_ae_para_t *ctrl);
+int video_exposure_release(void);
+int video_exposure_proc(isp_ae_para_t *ctrl, int frame);
 
 #endif /* SERVER_VIDEO_EXPOSURE_H_ */

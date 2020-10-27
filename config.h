@@ -187,8 +187,8 @@ typedef struct video_config_t {
 /*
  * function
  */
-int config_video_read(video_config_t *vconf);
-int config_video_set(int module, void *t);
-int config_video_get_config_status(int module);
+int video_config_video_read(video_config_t *vconf);
+int video_config_video_set(int module, void *t);
+int video_config_video_get_config_status(int module);
 
 #endif /* SERVER_VIDEO_CONFIG_H_ */
