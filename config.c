@@ -185,6 +185,7 @@ static config_map_t video_config_md_map[] = {
     {"cloud_report",	&(video_config.md.cloud_report),		cfg_u32, 1,0,0,1,},
     {"alarm_interval", 	&(video_config.md.alarm_interval), 		cfg_u32, 1,0,1,30,},
     {"sensitivity",		&(video_config.md.sensitivity),			cfg_u32, 30,0,0,100,},
+	{"recording_length",&(video_config.md.recording_length),	cfg_u32, 6,0,0,30,},
     {"start", 			&(video_config.md.start), 				cfg_string, '20:00-23:00',0, 0,32,},
     {"end",				&(video_config.md.end),					cfg_string, '20:00-23:00',0, 0,32,},
     {NULL,},

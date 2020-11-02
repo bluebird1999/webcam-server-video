@@ -26,14 +26,25 @@
 #define	RUN_MODE_SAVE			0
 #define RUN_MODE_SEND_MISS		1
 #define	RUN_MODE_SEND_MICLOUD	2
+#define	RUN_MODE_MOTION_DETECT	3
 
-#define		VIDEO_INIT_CONDITION_NUM			2
+#define		VIDEO_INIT_CONDITION_NUM			3
 #define		VIDEO_INIT_CONDITION_CONFIG			0
 #define		VIDEO_INIT_CONDITION_MIIO_TIME		1
+#define		VIDEO_INIT_CONDITION_REALTEK		2
 
 /*
  * structure
  */
+typedef struct video_stream_t {
+	//channel
+	int isp;
+	int h264;
+	int	jpg;
+	int osd;
+	//data
+	int	frame;
+} video_stream_t;
 
 /*
  * function

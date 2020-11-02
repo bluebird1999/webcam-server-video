@@ -61,11 +61,10 @@ static void task_stop(void);
 static void task_control(void);
 static void task_control_ext(void);
 static int send_message(int receiver, message_t *msg);
-static int server_get_status(int type);
-static int server_set_status(int type, int st);
+static int server_set_status(int type, int st, int value);
 static void server_thread_termination(int sign);
 //specific
-static int write_video_buffer(struct rts_av_buffer *data, int id, int target);
+static int write_video_buffer(struct rts_av_buffer *data, int id, int target, int type);
 static void video_mjpeg_func(void *priv, struct rts_av_profile *profile, struct rts_av_buffer *buffer);
 static int video_snapshot(void);
 static int *video_3acontrol_func(void *arg);
@@ -77,8 +76,6 @@ static int stream_start(void);
 static int stream_stop(void);
 static int video_init(void);
 static int video_main(void);
-static int send_iot_ack(message_t *org_msg, message_t *msg, int id, int receiver, int result, void *arg,int size);
-static int video_get_iot_config(video_iot_config_t *tmp);
 /*
  * %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
  * %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -88,103 +85,148 @@ static int video_get_iot_config(video_iot_config_t *tmp);
 /*
  * helper
  */
-static int send_iot_ack(message_t *org_msg, message_t *msg, int id, int receiver, int result, void *arg, int size)
-{
-	int ret = 0;
-    /********message body********/
-	msg_init(msg);
-	memcpy(&(msg->arg_pass), &(org_msg->arg_pass),sizeof(message_arg_t));
-	msg->message = id | 0x1000;
-	msg->sender = msg->receiver = SERVER_VIDEO;
-	msg->result = result;
-	msg->arg = arg;
-	msg->arg_size = size;
-	ret = send_message(receiver, msg);
-	/***************************/
-	return ret;
-}
-
 static int send_message(int receiver, message_t *msg)
 {
-	int st;
+	int st = 0;
 	switch(receiver) {
-	case SERVER_DEVICE:
-		break;
-	case SERVER_KERNEL:
-		break;
-	case SERVER_REALTEK:
-		break;
-	case SERVER_MIIO:
-		st = server_miio_message(msg);
-		break;
-	case SERVER_MISS:
-		st = server_miss_message(msg);
-		break;
-	case SERVER_MICLOUD:
-		break;
-	case SERVER_AUDIO:
-		st = server_audio_message(msg);
-		break;
-	case SERVER_RECORDER:
-		break;
-	case SERVER_PLAYER:
-		break;
-	case SERVER_MANAGER:
-		st = manager_message(msg);
-		break;
+		case SERVER_DEVICE:
+			st = server_device_message(msg);
+			break;
+		case SERVER_KERNEL:
+	//		st = server_kernel_message(msg);
+			break;
+		case SERVER_REALTEK:
+			st = server_realtek_message(msg);
+			break;
+		case SERVER_MIIO:
+			st = server_miio_message(msg);
+			break;
+		case SERVER_MISS:
+			st = server_miss_message(msg);
+			break;
+		case SERVER_MICLOUD:
+	//		st = server_micloud_message(msg);
+			break;
+		case SERVER_VIDEO:
+			st = server_video_message(msg);
+			break;
+		case SERVER_AUDIO:
+			st = server_audio_message(msg);
+			break;
+		case SERVER_RECORDER:
+			st = server_recorder_message(msg);
+			break;
+		case SERVER_PLAYER:
+			st = server_player_message(msg);
+			break;
+		case SERVER_SPEAKER:
+			st = server_speaker_message(msg);
+			break;
+		case SERVER_VIDEO2:
+			st = server_video2_message(msg);
+			break;
+		case SERVER_SCANNER:
+//			st = server_scanner_message(msg);
+			break;
+		case SERVER_MANAGER:
+			st = manager_message(msg);
+			break;
+		default:
+			log_err("unknown message target! %d", receiver);
+			break;
 	}
 	return st;
 }
 
-static int video_get_iot_config(video_iot_config_t *tmp)
+static int video_get_property(message_t *msg)
 {
 	int ret = 0, st;
-	memset(tmp,0,sizeof(video_iot_config_t));
+	int temp;
+	message_t send_msg;
+    /********message body********/
+	msg_init(&send_msg);
+	memcpy(&(send_msg.arg_pass), &(msg->arg_pass),sizeof(message_arg_t));
+	send_msg.message = msg->message | 0x1000;
+	send_msg.sender = send_msg.receiver = SERVER_VIDEO;
+	send_msg.arg_in.cat = msg->arg_in.cat;
+	send_msg.result = 0;
+	/****************************/
 	st = info.status;
-	if( st < STATUS_WAIT ) return -1;
-	tmp->on = ( st == STATUS_RUN ) ? 1:0;
-	/*
-	if( config.h264.h264_attr.rotation == RTS_AV_ROTATION_0 ) tmp->image_roll = 0;
-	else if( config.h264.h264_attr.rotation == RTS_AV_ROTATION_90R ) tmp->image_roll = 90;
-	else if( config.h264.h264_attr.rotation == RTS_AV_ROTATION_90L ) tmp->image_roll = 270;
-	else if( config.h264.h264_attr.rotation == RTS_AV_ROTATION_180 ) tmp->image_roll = 180;
-	*/
-	if( config.isp.flip == 0) tmp->image_roll = 0;
-	else if( config.isp.flip == 1) tmp->image_roll = 180;
-	if( config.isp.smart_ir_mode == RTS_ISP_SMART_IR_MODE_AUTO) tmp->night = 0;
-	else if( config.isp.smart_ir_mode == RTS_ISP_SMART_IR_MODE_DISABLE) tmp->night = 1;
-	else if( config.isp.smart_ir_mode == RTS_ISP_SMART_IR_MODE_LOW_LIGHT_PRIORITY) tmp->night = 2;
-	tmp->watermark = config.osd.enable;
-	tmp->wdr = config.isp.wdr_mode;
-	tmp->glimmer = 0;
-	tmp->motion_switch = config.md.enable;
-	tmp->motion_alarm = config.md.alarm_interval;
-	tmp->motion_sensitivity = config.md.sensitivity;
-	strcpy( tmp->motion_start, config.md.start);
-	strcpy( tmp->motion_end, config.md.end);
-	tmp->custom_warning_push = config.md.cloud_report;
-	tmp->custom_distortion = config.isp.ldc;
+	if( st < STATUS_WAIT ) {
+		send_msg.result = -1;
+		send_message( msg->receiver, &send_message);
+	}
+	else {
+		if( send_msg.arg_in.cat == VIDEO_PROPERTY_SWITCH) {
+			temp = ( st == STATUS_RUN ) ? 1:0;
+			send_msg.arg = (void*)(&temp);
+			send_msg.arg_size = sizeof(temp);
+		}
+		else if( send_msg.arg_in.cat == VIDEO_PROPERTY_IMAGE_ROLLOVER) {
+			if( config.isp.flip == 0 && config.isp.mirror == 0) temp = 0;
+			else if( config.isp.flip == 1 && config.isp.mirror == 1) temp = 180;
+			else{
+				send_msg.result = -1;
+			}
+			send_msg.arg = (void*)(&temp);
+			send_msg.arg_size = sizeof(temp);
+		}
+		else if( send_msg.arg_in.cat == VIDEO_PROPERTY_NIGHT_SHOT) {
+			if( config.isp.smart_ir_mode == RTS_ISP_SMART_IR_MODE_AUTO) temp = 0;
+			else if( config.isp.smart_ir_mode == RTS_ISP_SMART_IR_MODE_DISABLE) temp = 1;
+			else if( config.isp.smart_ir_mode == RTS_ISP_SMART_IR_MODE_LOW_LIGHT_PRIORITY) temp = 2;
+			send_msg.arg = (void*)(&temp);
+			send_msg.arg_size = sizeof(temp);
+		}
+		else if( send_msg.arg_in.cat == VIDEO_PROPERTY_TIME_WATERMARK) {
+			send_msg.arg = (void*)(&config.osd.enable);
+			send_msg.arg_size = sizeof(config.osd.enable);
+		}
+		else if( send_msg.arg_in.cat == VIDEO_PROPERTY_MOTION_SWITCH) {
+			send_msg.arg = (void*)(&config.md.enable);
+			send_msg.arg_size = sizeof(config.md.enable);
+		}
+		else if( send_msg.arg_in.cat == VIDEO_PROPERTY_MOTION_ALARM_INTERVAL) {
+			send_msg.arg = (void*)(&config.md.alarm_interval);
+			send_msg.arg_size = sizeof(config.md.alarm_interval);
+		}
+		else if( send_msg.arg_in.cat == VIDEO_PROPERTY_MOTION_SENSITIVITY) {
+			send_msg.arg = (void*)(&config.md.sensitivity);
+			send_msg.arg_size = sizeof(config.md.sensitivity);
+		}
+		else if( send_msg.arg_in.cat == VIDEO_PROPERTY_MOTION_START) {
+			send_msg.arg = (void*)(config.md.start);
+			send_msg.arg_size = strlen(config.md.start) + 1;
+		}
+		else if( send_msg.arg_in.cat == VIDEO_PROPERTY_MOTION_END) {
+			send_msg.arg = (void*)(config.md.end);
+			send_msg.arg_size = strlen(config.md.end) + 1;
+		}
+		else if( send_msg.arg_in.cat == VIDEO_PROPERTY_CUSTOM_WARNING_PUSH) {
+			send_msg.arg = (void*)(&config.md.cloud_report);
+			send_msg.arg_size = sizeof(config.md.cloud_report);
+		}
+		else if( send_msg.arg_in.cat == VIDEO_PROPERTY_CUSTOM_DISTORTION) {
+			send_msg.arg = (void*)(&config.isp.ldc);
+			send_msg.arg_size = sizeof(config.isp.ldc);
+		}
+		ret = send_message( msg->receiver, &send_msg);
+	}
 	return ret;
 }
 
-static int video_process_direct_ctrl(message_t *msg)
+static int video_set_property(message_t *msg)
 {
-	int ret=0;
+	int ret=0, mode = -1;
 	message_t send_msg;
-	device_iot_config_t tmp;
-	memset(&tmp, 0, sizeof(tmp));
-	if( msg->arg_in.cat == VIDEO_CTRL_WDR_MODE ) {
-		int temp = *((int*)(msg->arg));
-		if( temp != config.isp.wdr_mode) {
-			ret = video_isp_set_attr(RTS_VIDEO_CTRL_ID_WDR_MODE, temp);
-			if(!ret) {
-				config.isp.wdr_mode = *((int*)(msg->arg));
-				log_info("changed the wdr = %d", config.isp.wdr_mode);
-				video_config_video_set(CONFIG_VIDEO_ISP, &config.isp);
-			}
-		}
-	}
-	if( msg->arg_in.cat == VIDEO_CTRL_IMAGE_ROLLOVER ) {
+    /********message body********/
+	msg_init(&send_msg);
+	memcpy(&(send_msg.arg_pass), &(msg->arg_pass),sizeof(message_arg_t));
+	send_msg.message = msg->message | 0x1000;
+	send_msg.sender = send_msg.receiver = SERVER_VIDEO;
+	send_msg.arg_in.cat = msg->arg_in.cat;
+	/****************************/
+/*	if( msg->arg_in.cat == VIDEO_PROPERTY_IMAGE_ROLLOVER ) {
 		int temp = *((int*)(msg->arg));
 		if( temp == 0 && (config.isp.flip!=0 || config.isp.mirror!=0) ) {
 			ret = video_isp_set_attr(RTS_VIDEO_CTRL_ID_FLIP, 0);
@@ -208,45 +250,42 @@ static int video_process_direct_ctrl(message_t *msg)
 				video_config_video_set(CONFIG_VIDEO_ISP, &config.isp);
 			}
 		}
-	}
-	else if( msg->arg_in.cat == VIDEO_CTRL_NIGHT_SHOT ) {
+	}else
+*/
+	if( msg->arg_in.cat == VIDEO_PROPERTY_NIGHT_SHOT ) {
 		int temp = *((int*)(msg->arg));
 		if( temp == 0) {	//automode
 			ret = video_isp_set_attr(RTS_VIDEO_CTRL_ID_SMART_IR_MODE, RTS_ISP_SMART_IR_MODE_AUTO);
 			if(!ret) {
 				config.isp.smart_ir_mode = RTS_ISP_SMART_IR_MODE_AUTO;
 			}
-			tmp.day_night_mode = DAY_NIGHT_AUTO;
+			mode = DAY_NIGHT_AUTO;
 		}
 		else if( temp == 1) {//close
 			ret = video_isp_set_attr(RTS_VIDEO_CTRL_ID_SMART_IR_MODE, RTS_ISP_SMART_IR_MODE_DISABLE);
 			if(!ret) {
 				config.isp.smart_ir_mode = RTS_ISP_SMART_IR_MODE_DISABLE;
 			}
-			tmp.day_night_mode = DAY_NIGHT_OFF;
+			mode = DAY_NIGHT_OFF;
 		}
 		else if( temp == 2) {//open
 			ret = video_isp_set_attr(RTS_VIDEO_CTRL_ID_SMART_IR_MODE, RTS_ISP_SMART_IR_MODE_LOW_LIGHT_PRIORITY);
 			if(!ret) {
 				config.isp.smart_ir_mode = RTS_ISP_SMART_IR_MODE_LOW_LIGHT_PRIORITY;
 			}
-			tmp.day_night_mode = DAY_NIGHT_ON;
+			mode = DAY_NIGHT_ON;
 		}
 		if(!ret) {
 			log_info("changed the smart night mode = %d", config.isp.smart_ir_mode);
 			video_config_video_set(CONFIG_VIDEO_ISP, &config.isp);
 		    /********message body********/
-			msg_init(&send_msg);
-			send_msg.message = MSG_DEVICE_CTRL_DIRECT;
-			send_msg.sender = send_msg.receiver = SERVER_VIDEO;
 			send_msg.arg_in.cat = DEVICE_CTRL_DAY_NIGHT_MODE;
-			send_msg.arg = (void *)&tmp;
-			send_msg.arg_size = sizeof(device_iot_config_t);
-			ret = server_device_message(&send_msg);
+			send_msg.arg = (void *)&mode;
+			send_msg.arg_size = sizeof(mode);
 			/***************************/
 		}
 	}
-	else if( msg->arg_in.cat == VIDEO_CTRL_CUSTOM_DISTORTION ) {
+	else if( msg->arg_in.cat == VIDEO_PROPERTY_CUSTOM_DISTORTION ) {
 		int temp = *((int*)(msg->arg));
 		if( temp != config.isp.ldc ) {
 			ret = video_isp_set_attr(RTS_VIDEO_CTRL_ID_LDC, temp );
@@ -257,7 +296,10 @@ static int video_process_direct_ctrl(message_t *msg)
 			}
 		}
 	}
-	ret = send_iot_ack(msg, &send_msg, MSG_VIDEO_CTRL_DIRECT_ACK, msg->receiver, ret, 0, 0);
+	/***************************/
+	send_msg.result = ret;
+	ret = send_message(msg->receiver, &send_msg);
+	/***************************/
 	return ret;
 }
 
@@ -304,7 +346,6 @@ static int *video_md_func(void *arg)
 	int st;
     signal(SIGINT, server_thread_termination);
     signal(SIGTERM, server_thread_termination);
-//    signal(SIGSEGV, manager_sigsegv);
     misc_set_thread_name("server_video_md");
     pthread_detach(pthread_self());
     //init
@@ -312,7 +353,7 @@ static int *video_md_func(void *arg)
     video_md_init( &ctrl, config.profile.profile[config.profile.quality].video.width,
     		config.profile.profile[config.profile.quality].video.height,
 			&scheduler_time, &mode);
-    misc_set_bit(&info.thread_start, THREAD_MD, 1);
+    server_set_status(STATUS_TYPE_THREAD_START, THREAD_MD, 1 );
     while( 1 ) {
     	st = info.status;
     	if( info.exit ) break;
@@ -327,7 +368,7 @@ static int *video_md_func(void *arg)
     //release
     log_info("-----------thread exit: server_video_md-----------");
     video_md_release();
-    misc_set_bit(&info.thread_start, THREAD_MD, 0);
+    server_set_status(STATUS_TYPE_THREAD_START, THREAD_MD, 0 );
     pthread_exit(0);
 }
 
@@ -337,7 +378,6 @@ static int *video_3acontrol_func(void *arg)
 	server_status_t st;
     signal(SIGINT, server_thread_termination);
     signal(SIGTERM, server_thread_termination);
- //   signal(SIGSEGV, manager_sigsegv);
     misc_set_thread_name("server_video_3a_control");
     pthread_detach(pthread_self());
     //init
@@ -345,7 +385,7 @@ static int *video_3acontrol_func(void *arg)
     video_white_balance_init( &ctrl.awb_para);
     video_exposure_init(&ctrl.ae_para);
     video_focus_init(&ctrl.af_para);
-    misc_set_bit(&info.thread_start, THREAD_3ACTRL, 1);
+    server_set_status(STATUS_TYPE_THREAD_START, THREAD_3ACTRL, 1 );
     while( 1 ) {
     	st = info.status;
     	if( info.exit ) break;
@@ -362,7 +402,7 @@ static int *video_3acontrol_func(void *arg)
     video_white_balance_release();
     video_exposure_release();
     video_focus_release();
-    misc_set_bit(&info.thread_start, THREAD_3ACTRL, 0);
+    server_set_status(STATUS_TYPE_THREAD_START, THREAD_3ACTRL, 0 );
     pthread_exit(0);
 }
 
@@ -372,7 +412,6 @@ static int *video_osd_func(void *arg)
 	video_osd_config_t ctrl;
     signal(SIGINT, server_thread_termination);
     signal(SIGTERM, server_thread_termination);
-//    signal(SIGSEGV, manager_sigsegv);
     misc_set_thread_name("server_video_osd");
     pthread_detach(pthread_self());
     //init
@@ -382,7 +421,7 @@ static int *video_osd_func(void *arg)
     	log_err("osd init error!");
     	goto exit;
     }
-    misc_set_bit(&info.thread_start, THREAD_OSD, 1);
+    server_set_status(STATUS_TYPE_THREAD_START, THREAD_OSD, 1 );
     while( 1 ) {
     	if( info.exit ) break;
     	st = info.status;
@@ -396,7 +435,7 @@ static int *video_osd_func(void *arg)
 exit:
     log_info("-----------thread exit: server_video_osd-----------");
     video_osd_release();
-    misc_set_bit(&info.thread_start, THREAD_OSD, 0);
+    server_set_status(STATUS_TYPE_THREAD_START, THREAD_OSD, 0 );
     pthread_exit(0);
 }
 
@@ -491,7 +530,7 @@ static int stream_start(void)
     	log_err("start recv h264 fail, ret = %d", ret);
     	return -1;
     }
-    //start the 3a control thread
+/*    //start the 3a control thread
 	ret = pthread_create(&isp_3a_id, NULL, video_3acontrol_func, (void*)&config.a3ctrl);
 	if(ret != 0) {
 		log_err("3a control thread create error! ret = %d",ret);
@@ -500,6 +539,7 @@ static int stream_start(void)
 	else {
 		log_info("3a control thread create successful!");
 	}
+*/
 	if( config.osd.enable && stream.osd != -1 ) {
 		//start the osd thread
 		ret = pthread_create(&osd_id, NULL, video_osd_func, (void*)&config.osd);
@@ -614,16 +654,20 @@ static int video_main(void)
 		return 0;
 	if (buffer) {
 		if( misc_get_bit(info.status2, RUN_MODE_SEND_MISS) ) {
-			if( write_video_buffer(buffer, MSG_MISS_VIDEO_DATA, SERVER_VIDEO) != 0 )
+			if( write_video_buffer(buffer, MSG_MISS_VIDEO_DATA, SERVER_MISS, 0) != 0 )
 				log_err("Miss ring buffer push failed!");
 		}
 		if( misc_get_bit(info.status2, RUN_MODE_SAVE) ) {
-			if( write_video_buffer(buffer, MSG_RECORDER_VIDEO_DATA, SERVER_RECORDER) != 0 )
+			if( write_video_buffer(buffer, MSG_RECORDER_VIDEO_DATA, SERVER_RECORDER, RECORDER_TYPE_NORMAL) != 0 )
+				log_err("Recorder ring buffer push failed!");
+		}
+		if( misc_get_bit(info.status2, RUN_MODE_MOTION_DETECT) ) {
+			if( write_video_buffer(buffer, MSG_RECORDER_VIDEO_DATA, SERVER_RECORDER, RECORDER_TYPE_MOTION_DETECTION) != 0 )
 				log_err("Recorder ring buffer push failed!");
 		}
 		if( misc_get_bit(info.status2, RUN_MODE_SEND_MICLOUD) ) {
 /*	wait for other server
- * 			if( write_video_buffer(buffer, MSG_MICLOUD_VIDEO_DATA, SERVER_MICLOUD) != 0 )
+ * 			if( write_video_buffer(buffer, MSG_MICLOUD_VIDEO_DATA, SERVER_MICLOUD, 0) != 0 )
 				log_err("Micloud ring buffer push failed!");
 */
 		}
@@ -633,13 +677,15 @@ static int video_main(void)
     return ret;
 }
 
-static int write_video_buffer(struct rts_av_buffer *data, int id, int target)
+static int write_video_buffer(struct rts_av_buffer *data, int id, int target, int type)
 {
 	int ret=0;
 	message_t msg;
 	av_data_info_t	info;
     /********message body********/
 	msg_init(&msg);
+	msg.sender = msg.receiver = SERVER_VIDEO;
+	msg.arg_in.cat = type;
 	msg.message = id;
 	msg.extra = data->vm_addr;
 	msg.extra_size = data->bytesused;
@@ -666,13 +712,35 @@ static int write_video_buffer(struct rts_av_buffer *data, int id, int target)
         info.flag |= FLAG_RESOLUTION_VIDEO_1080P << 17;
 	msg.arg = &info;
 	msg.arg_size = sizeof(av_data_info_t);
-	if( target == SERVER_VIDEO )
+	if( target == SERVER_MISS )
 		ret = server_miss_video_message(&msg);
-//	else if( target == MSG_MICLOUD_VIDEO_DATA )
+//	else if( target == SERVER_MICLOUD )
 //		ret = server_micloud_video_message(&msg);
-	else if( target == MSG_RECORDER_VIDEO_DATA )
+	else if( target == SERVER_RECORDER )
 		ret = server_recorder_video_message(&msg);
 	/****************************/
+	return ret;
+}
+
+static int server_set_status(int type, int st, int value)
+{
+	int ret=-1;
+	ret = pthread_rwlock_wrlock(&info.lock);
+	if(ret)	{
+		log_err("add lock fail, ret = %d", ret);
+		return ret;
+	}
+	if(type == STATUS_TYPE_STATUS)
+		info.status = st;
+	else if(type==STATUS_TYPE_EXIT)
+		info.exit = st;
+	else if(type==STATUS_TYPE_CONFIG)
+		config.status = st;
+	else if(type==STATUS_TYPE_THREAD_START)
+		misc_set_bit(&info.thread_start, st, value);
+	ret = pthread_rwlock_unlock(&info.lock);
+	if (ret)
+		log_err("add unlock fail, ret = %d", ret);
 	return ret;
 }
 
@@ -708,54 +776,10 @@ static int server_release(void)
 	return ret;
 }
 
-static int server_set_status(int type, int st)
-{
-	int ret=-1;
-	ret = pthread_rwlock_wrlock(&info.lock);
-	if(ret)	{
-		log_err("add lock fail, ret = %d", ret);
-		return ret;
-	}
-	if(type == STATUS_TYPE_STATUS) info.status = st;
-	else if(type==STATUS_TYPE_EXIT) info.exit = st;
-	else if(type==STATUS_TYPE_CONFIG) config.status = st;
-	else if(type==STATUS_TYPE_THREAD_START) info.thread_start = st;
-	else if(type==STATUS_TYPE_THREAD_EXIT) info.thread_exit = st;
-	else if(type==STATUS_TYPE_MESSAGE_LOCK) info.msg_lock = st;
-	else if(type==STATUS_TYPE_STATUS2) info.status2 = st;
-	ret = pthread_rwlock_unlock(&info.lock);
-	if (ret)
-		log_err("add unlock fail, ret = %d", ret);
-	return ret;
-}
-
-static int server_get_status(int type)
-{
-	int st;
-	int ret;
-	ret = pthread_rwlock_wrlock(&info.lock);
-	if(ret)	{
-		log_err("add lock fail, ret = %d", ret);
-		return ret;
-	}
-	if(type == STATUS_TYPE_STATUS) st = info.status;
-	else if(type== STATUS_TYPE_EXIT) st = info.exit;
-	else if(type==STATUS_TYPE_CONFIG) st = config.status;
-	else if(type==STATUS_TYPE_THREAD_START) st = info.thread_start;
-	else if(type==STATUS_TYPE_THREAD_EXIT) st = info.thread_exit;
-	else if(type==STATUS_TYPE_MESSAGE_LOCK) st = info.msg_lock;
-	else if(type==STATUS_TYPE_STATUS2) st = info.status2;
-	ret = pthread_rwlock_unlock(&info.lock);
-	if (ret)
-		log_err("add unlock fail, ret = %d", ret);
-	return st;
-}
-
 static int server_message_proc(void)
 {
 	int ret = 0, ret1 = 0;
-	message_t msg,send_msg;
-	video_iot_config_t tmp;
+	message_t msg, send_msg;
 	msg_init(&msg);
 	ret = pthread_rwlock_wrlock(&message.lock);
 	if(ret)	{
@@ -777,13 +801,26 @@ static int server_message_proc(void)
 	}
 	else if( ret == 1)
 		return 0;
+
+    /********message body********/
+	msg_init(&send_msg);
+	memcpy(&(send_msg.arg_pass), &(msg.arg_pass),sizeof(message_arg_t));
+	send_msg.message = msg.message | 0x1000;
+	send_msg.sender = send_msg.receiver = SERVER_VIDEO;
+	send_msg.result = 0;
+	/***************************/
 	switch(msg.message) {
 		case MSG_VIDEO_START:
 			if( msg.sender == SERVER_MISS) misc_set_bit(&info.status2, RUN_MODE_SEND_MISS, 1);
 			if( msg.sender == SERVER_MICLOUD) misc_set_bit(&info.status2, RUN_MODE_SEND_MICLOUD, 1);
-			if( msg.sender == SERVER_RECORDER) misc_set_bit(&info.status2, RUN_MODE_SAVE, 1);
+			if( msg.sender == SERVER_RECORDER) {
+				if( msg.arg_in.cat == RECORDER_TYPE_NORMAL)
+					misc_set_bit(&info.status2, RUN_MODE_SAVE, 1);
+				else if( msg.arg_in.cat == RECORDER_TYPE_MOTION_DETECTION )
+					misc_set_bit(&info.status2, RUN_MODE_MOTION_DETECT, 1);
+			}
 			if( info.status == STATUS_RUN ) {
-				ret = send_iot_ack(&msg, &send_msg, MSG_VIDEO_START, msg.receiver, 0, 0, 0);
+				ret = send_message(msg.receiver, &send_msg);
 				break;
 			}
 			info.task.func = task_start;
@@ -794,13 +831,18 @@ static int server_message_proc(void)
 		case MSG_VIDEO_STOP:
 			if( msg.sender == SERVER_MISS) misc_set_bit(&info.status2, RUN_MODE_SEND_MISS, 0);
 			if( msg.sender == SERVER_MICLOUD) misc_set_bit(&info.status2, RUN_MODE_SEND_MICLOUD, 0);
-			if( msg.sender == SERVER_RECORDER) misc_set_bit(&info.status2, RUN_MODE_SAVE, 0);
+			if( msg.sender == SERVER_RECORDER) {
+				if( msg.arg_in.cat == RECORDER_TYPE_NORMAL)
+					misc_set_bit(&info.status2, RUN_MODE_SAVE, 0);
+				else if( msg.arg_in.cat == RECORDER_TYPE_MOTION_DETECTION )
+					misc_set_bit(&info.status2, RUN_MODE_MOTION_DETECT, 0);
+			}
 			if( info.status != STATUS_RUN ) {
-				ret = send_iot_ack(&msg, &send_msg, MSG_VIDEO_STOP, msg.receiver, 0, 0, 0);
+				ret = send_message(msg.receiver, &send_msg);
 				break;
 			}
 			if( info.status2 > 0 ) {
-				ret = send_iot_ack(&msg, &send_msg, MSG_VIDEO_STOP, msg.receiver, 0, 0, 0);
+				ret = send_message(msg.receiver, &send_msg);
 				break;
 			}
 			info.task.func = task_stop;
@@ -808,53 +850,53 @@ static int server_message_proc(void)
 			msg_deep_copy(&info.task.msg, &msg);
 			info.msg_lock = 1;
 			break;
-		case MSG_VIDEO_CTRL:
-			if(msg.arg_in.cat == VIDEO_CTRL_QUALITY) {
+		case MSG_VIDEO_PROPERTY_SET:
+			if(msg.arg_in.cat == VIDEO_PROPERTY_QUALITY) {
 				int temp = *((int*)(msg.arg));
 				if( temp == config.profile.quality) {
-					ret = send_iot_ack(&msg, &send_msg, MSG_VIDEO_CTRL, msg.receiver, 0, 0, 0 );
+					ret = send_message(msg.receiver, &send_msg);
 					break;
 				}
 			}
-			else if( msg.arg_in.cat == VIDEO_CTRL_MOTION_SWITCH) {
+			else if( msg.arg_in.cat == VIDEO_PROPERTY_MOTION_SWITCH) {
 				int temp = *((int*)(msg.arg));
 				if( temp == config.md.enable ) {
-					ret = send_iot_ack(&msg, &send_msg, MSG_VIDEO_CTRL, msg.receiver, 0, 0, 0 );
+					ret = send_message(msg.receiver, &send_msg);
 					break;
 				}
 			}
-			else if( msg.arg_in.cat == VIDEO_CTRL_MOTION_ALARM_INTERVAL) {
+			else if( msg.arg_in.cat == VIDEO_PROPERTY_MOTION_ALARM_INTERVAL) {
 				int temp = *((int*)(msg.arg));
 				if( temp == config.md.alarm_interval ) {
-					ret = send_iot_ack(&msg, &send_msg, MSG_VIDEO_CTRL, msg.receiver, 0, 0, 0 );
+					ret = send_message(msg.receiver, &send_msg);
 					break;
 				}
 			}
-			else if( msg.arg_in.cat == VIDEO_CTRL_MOTION_SENSITIVITY) {
+			else if( msg.arg_in.cat == VIDEO_PROPERTY_MOTION_SENSITIVITY) {
 				int temp = *((int*)(msg.arg));
 				if( temp == config.md.sensitivity ) {
-					ret = send_iot_ack(&msg, &send_msg, MSG_VIDEO_CTRL, msg.receiver, 0, 0, 0 );
+					ret = send_message(msg.receiver, &send_msg);
 					break;
 				}
 			}
-			else if( msg.arg_in.cat == VIDEO_CTRL_MOTION_START) {
+			else if( msg.arg_in.cat == VIDEO_PROPERTY_MOTION_START) {
 				char *temp = (char*)(msg.arg);
 				if( !strcmp( temp, config.md.start) ) {
-					ret = send_iot_ack(&msg, &send_msg, MSG_VIDEO_CTRL, msg.receiver, 0, 0, 0 );
+					ret = send_message(msg.receiver, &send_msg);
 					break;
 				}
 			}
-			else if( msg.arg_in.cat == VIDEO_CTRL_MOTION_END) {
+			else if( msg.arg_in.cat == VIDEO_PROPERTY_MOTION_END) {
 				char *temp = (char*)(msg.arg);
 				if( !strcmp( temp, config.md.end) ) {
-					ret = send_iot_ack(&msg, &send_msg, MSG_VIDEO_CTRL, msg.receiver, 0, 0, 0 );
+					ret = send_message(msg.receiver, &send_msg);
 					break;
 				}
 			}
-			else if( msg.arg_in.cat == VIDEO_CTRL_CUSTOM_WARNING_PUSH) {
+			else if( msg.arg_in.cat == VIDEO_PROPERTY_CUSTOM_WARNING_PUSH) {
 				int temp = (char*)(msg.arg);
 				if( temp == config.md.cloud_report ) {
-					ret = send_iot_ack(&msg, &send_msg, MSG_VIDEO_CTRL, msg.receiver, 0, 0, 0 );
+					ret = send_message(msg.receiver, &send_msg);
 					break;
 				}
 			}
@@ -863,38 +905,32 @@ static int server_message_proc(void)
 			msg_deep_copy(&info.task.msg, &msg);
 			info.msg_lock = 1;
 			break;
-		case MSG_VIDEO_CTRL_EXT:
-			if( msg.arg_in.cat == VIDEO_CTRL_TIME_WATERMARK ) {
+		case MSG_VIDEO_PROPERTY_SET_EXT:
+			if( msg.arg_in.cat == VIDEO_PROPERTY_TIME_WATERMARK ) {
 				int temp = *((int*)(msg.arg));
 				if( temp  == config.osd.enable) {
-					ret = send_iot_ack(&msg, &send_msg, MSG_VIDEO_CTRL_EXT, msg.receiver, 0, 0, 0 );
+					ret = send_message(msg.receiver, &send_msg);
 					break;
 				}
 			}
-			else if( msg.arg_in.cat == VIDEO_CTRL_IMAGE_ROLLOVER ) {
-				int temp =  *((int*)(msg.arg));
-				if( ( (temp == 0) && (config.h264.h264_attr.rotation == RTS_AV_ROTATION_0) ) ||
-					( ( temp == 180) && (config.h264.h264_attr.rotation == RTS_AV_ROTATION_180)) ||
-					( (temp == 90) && (config.h264.h264_attr.rotation == RTS_AV_ROTATION_90R)) ||
-					( (temp == 270) && (config.h264.h264_attr.rotation == RTS_AV_ROTATION_90L))
-				) {
-					ret = send_iot_ack(&msg, &send_msg, MSG_VIDEO_CTRL_EXT, msg.receiver, 0, 0, 0 );
+			else if( msg.arg_in.cat == VIDEO_PROPERTY_IMAGE_ROLLOVER ) {
+				int temp = *((int*)(msg.arg));
+				if( ( temp == 0 && config.isp.flip==0 && config.isp.mirror==0 ) ||
+					( temp == 180 && config.isp.flip==1 && config.isp.mirror==1)  ) {
+					ret = send_message(msg.receiver, &send_msg);
 					break;
 				}
-
 			}
 			info.task.func = task_control_ext;
 			info.task.start = info.status;
 			msg_deep_copy(&info.task.msg, &msg);
 			info.msg_lock = 1;
 			break;
-		case MSG_VIDEO_CTRL_DIRECT:
-			video_process_direct_ctrl(&msg);
+		case MSG_VIDEO_PROPERTY_SET_DIRECT:
+			video_set_property(&msg);
 			break;
-		case MSG_VIDEO_GET_PARA:
-			ret = video_get_iot_config(&tmp);
-			send_iot_ack(&msg, &send_msg, MSG_VIDEO_GET_PARA, msg.receiver, ret,
-					&tmp, sizeof(video_iot_config_t));
+		case MSG_VIDEO_PROPERTY_GET:
+			ret = video_get_property(&msg);
 			break;
 		case MSG_MANAGER_EXIT:
 			info.exit = 1;
@@ -902,8 +938,19 @@ static int server_message_proc(void)
 		case MSG_MANAGER_TIMER_ACK:
 			((HANDLER)msg.arg_in.handler)();
 			break;
-		case MSG_MIIO_TIME_SYNCHRONIZED:
-			misc_set_bit( &info.thread_exit, VIDEO_INIT_CONDITION_MIIO_TIME, 1);
+		case MSG_MIIO_PROPERTY_NOTIFY:
+		case MSG_MIIO_PROPERTY_GET_ACK:
+			if( msg.arg_in.cat == MIIO_PROPERTY_TIME_SYNC ) {
+				if( msg.arg_in.dog == 1 )
+					misc_set_bit( &info.thread_exit, VIDEO_INIT_CONDITION_MIIO_TIME, 1);
+			}
+			break;
+		case MSG_REALTEK_PROPERTY_NOTIFY:
+		case MSG_REALTEK_PROPERTY_GET_ACK:
+			if( msg.arg_in.cat == REALTEK_PROPERTY_AV_STATUS ) {
+				if( msg.arg_in.dog == 1 )
+					misc_set_bit(&info.thread_exit, VIDEO_INIT_CONDITION_REALTEK, 1);
+			}
 			break;
 		default:
 			log_err("not processed message = %d", msg.message);
@@ -919,7 +966,7 @@ static int heart_beat_proc(void)
 	message_t msg;
 	long long int tick = 0;
 	tick = time_get_now_stamp();
-	if( (tick - info.tick) > 10 ) {
+	if( (tick - info.tick) > SERVER_HEARTBEAT_INTERVAL ) {
 		info.tick = tick;
 	    /********message body********/
 		msg_init(&msg);
@@ -951,10 +998,13 @@ static void task_error(void)
 			break;
 		case STATUS_NONE:
 			tick = time_get_now_stamp();
-			if( (tick - info.tick) > 5 ) {
+			if( (tick - info.tick) > SERVER_RESTART_PAUSE ) {
 				info.exit = 1;
 				info.tick = tick;
 			}
+			break;
+		default:
+			log_err("!!!!!!!unprocessed server status in task_error = %d", info.status);
 			break;
 	}
 	usleep(1000);
@@ -967,7 +1017,14 @@ static void task_control_ext(void)
 {
 	static int para_set = 0;
 	message_t msg;
-	int ret;
+	int ret = 0;
+	/**************************/
+	msg_init(&msg);
+	memcpy(&(msg.arg_pass), &(info.task.msg.arg_pass),sizeof(message_arg_t));
+	msg.message = info.task.msg.message | 0x1000;
+	msg.sender = msg.receiver = SERVER_VIDEO;
+	msg.result = 0;
+	/***************************/
 	switch(info.status){
 		case STATUS_RUN:
 			if( !para_set ) info.status = STATUS_RESTART;
@@ -982,19 +1039,23 @@ static void task_control_ext(void)
 			}
 			break;
 		case STATUS_WAIT:
-			if( info.task.msg.arg_in.cat == VIDEO_CTRL_TIME_WATERMARK ) {
+			if( info.task.msg.arg_in.cat == VIDEO_PROPERTY_TIME_WATERMARK ) {
 				config.osd.enable = *((int*)(info.task.msg.arg));
 				log_info("changed the osd switch = %d", config.osd.enable);
 				video_config_video_set(CONFIG_VIDEO_OSD,  &config.osd);
 			}
-			else if( info.task.msg.arg_in.cat == VIDEO_CTRL_IMAGE_ROLLOVER ) {
+			else if( info.task.msg.arg_in.cat == VIDEO_PROPERTY_IMAGE_ROLLOVER ) {
 				int temp = *((int*)(info.task.msg.arg));
-				if( temp == 0 ) config.h264.h264_attr.rotation = RTS_AV_ROTATION_0;
-				else if( temp == 90 ) config.h264.h264_attr.rotation = RTS_AV_ROTATION_90R;
-				else if( temp == 270 ) config.h264.h264_attr.rotation = RTS_AV_ROTATION_90L;
-				else if( temp == 180 ) config.h264.h264_attr.rotation = RTS_AV_ROTATION_180;
-				log_info("changed the rotation = %d", config.h264.h264_attr.rotation );
-				video_config_video_set(CONFIG_VIDEO_H264,  &config.h264);
+				if( temp == 0 )  {
+					config.isp.flip = 0;
+					config.isp.mirror = 0;
+				}
+				else if( temp == 180 ) {
+					config.isp.flip = 1;
+					config.isp.mirror = 1;
+				}
+				log_info("changed the image rollover, flip = %d, mirror = %d ", config.isp.flip, config.isp.mirror );
+				video_config_video_set(CONFIG_VIDEO_ISP,  &config.isp);
 			}
 			para_set = 1;
 			if( info.task.start == STATUS_WAIT ) goto success_exit;
@@ -1013,14 +1074,18 @@ static void task_control_ext(void)
 			info.status = STATUS_WAIT;
 			break;
 		case STATUS_ERROR:
-			ret = send_iot_ack(&info.task.msg, &msg, MSG_VIDEO_CTRL_EXT, info.task.msg.receiver, -1, 0, 0);
+			msg.result = -1;
+			ret = send_message(info.task.msg.receiver, &msg);
 			goto exit;
+			break;
+		default:
+			log_err("!!!!!!!unprocessed server status in task_control_exit = %d", info.status);
 			break;
 	}
 	usleep(1000);
 	return;
 success_exit:
-	ret = send_iot_ack(&info.task.msg, &msg, MSG_VIDEO_CTRL_EXT, info.task.msg.receiver, 0,0,0);
+	ret = send_message(info.task.msg.receiver, &msg);
 exit:
 	para_set = 0;
 	info.task.func = &task_default;
@@ -1035,8 +1100,18 @@ static void task_control(void)
 {
 	static int para_set = 0;
 	message_t msg;
-	int ret;
+	int ret = 0;
+	/**************************/
+	msg_init(&msg);
+	memcpy(&(msg.arg_pass), &(info.task.msg.arg_pass),sizeof(message_arg_t));
+	msg.message = info.task.msg.message | 0x1000;
+	msg.sender = msg.receiver = SERVER_VIDEO;
+	msg.result = 0;
+	/***************************/
 	switch(info.status){
+		case STATUS_WAIT:
+			info.status = STATUS_SETUP;
+			break;
 		case STATUS_RUN:
 			if( !para_set ) info.status = STATUS_STOP;
 			else goto success_exit;
@@ -1046,37 +1121,37 @@ static void task_control(void)
 			else info.status = STATUS_ERROR;
 			break;
 		case STATUS_IDLE:
-			if( info.task.msg.arg_in.cat == VIDEO_CTRL_QUALITY ) {
+			if( info.task.msg.arg_in.cat == VIDEO_PROPERTY_QUALITY ) {
 				config.profile.quality = *((int*)(info.task.msg.arg));
 				log_info("changed the quality = %d", config.profile.quality);
 				video_config_video_set(CONFIG_VIDEO_PROFILE, &config.profile);
 			}
-			else if( info.task.msg.arg_in.cat == VIDEO_CTRL_MOTION_SWITCH ) {
+			else if( info.task.msg.arg_in.cat == VIDEO_PROPERTY_MOTION_SWITCH ) {
 				config.md.enable = *((int*)(info.task.msg.arg));
 				log_info("changed the motion switch = %d", config.md.enable);
 				video_config_video_set(CONFIG_VIDEO_MD, &config.md);
 			}
-			else if( info.task.msg.arg_in.cat == VIDEO_CTRL_MOTION_ALARM_INTERVAL ) {
+			else if( info.task.msg.arg_in.cat == VIDEO_PROPERTY_MOTION_ALARM_INTERVAL ) {
 				config.md.alarm_interval = *((int*)(info.task.msg.arg));
 				log_info("changed the motion detection alarm interval = %d", config.md.alarm_interval);
 				video_config_video_set(CONFIG_VIDEO_MD, &config.md);
 			}
-			else if( info.task.msg.arg_in.cat == VIDEO_CTRL_MOTION_SENSITIVITY ) {
+			else if( info.task.msg.arg_in.cat == VIDEO_PROPERTY_MOTION_SENSITIVITY ) {
 				config.md.sensitivity = *((int*)(info.task.msg.arg));
 				log_info("changed the motion detection sensitivity = %d", config.md.sensitivity);
 				video_config_video_set(CONFIG_VIDEO_MD, &config.md);
 			}
-			else if( info.task.msg.arg_in.cat == VIDEO_CTRL_MOTION_START ) {
+			else if( info.task.msg.arg_in.cat == VIDEO_PROPERTY_MOTION_START ) {
 				strcpy( config.md.start, (char*)(info.task.msg.arg) );
 				log_info("changed the motion detection start = %s", config.md.start);
 				video_config_video_set(CONFIG_VIDEO_MD, &config.md);
 			}
-			else if( info.task.msg.arg_in.cat == VIDEO_CTRL_MOTION_END ) {
+			else if( info.task.msg.arg_in.cat == VIDEO_PROPERTY_MOTION_END ) {
 				strcpy( config.md.end, (char*)(info.task.msg.arg) );
 				log_info("changed the motion detection end = %s", config.md.end);
 				video_config_video_set(CONFIG_VIDEO_MD, &config.md);
 			}
-			else if( info.task.msg.arg_in.cat == VIDEO_CTRL_CUSTOM_WARNING_PUSH ) {
+			else if( info.task.msg.arg_in.cat == VIDEO_PROPERTY_CUSTOM_WARNING_PUSH ) {
 				config.md.cloud_report = *((int*)(info.task.msg.arg));
 				log_info("changed the motion detection cloud push = %d", config.md.cloud_report);
 				video_config_video_set(CONFIG_VIDEO_MD, &config.md);
@@ -1101,13 +1176,17 @@ static void task_control(void)
 			else info.status = STATUS_ERROR;
 			break;
 		case STATUS_ERROR:
-			ret = send_iot_ack(&info.task.msg, &msg, MSG_VIDEO_CTRL, info.task.msg.receiver, -1, 0, 0);
+			msg.result = -1;
+			ret = send_message( info.task.msg.receiver, &msg);
 			if( !ret ) goto exit;
+		default:
+			log_err("!!!!!!!unprocessed server status in task_control = %d", info.status);
+			break;
 	}
 	usleep(1000);
 	return;
 success_exit:
-	ret = send_iot_ack(&info.task.msg, &msg, MSG_VIDEO_CTRL, info.task.msg.receiver, 0,0,0);
+	ret = send_message( info.task.msg.receiver, &msg);
 exit:
 	para_set = 0;
 	info.task.func = &task_default;
@@ -1121,10 +1200,20 @@ exit:
 static void task_start(void)
 {
 	message_t msg;
-	int ret;
+	int ret = 0;
+	/**************************/
+	msg_init(&msg);
+	memcpy(&(msg.arg_pass), &(info.task.msg.arg_pass),sizeof(message_arg_t));
+	msg.message = info.task.msg.message | 0x1000;
+	msg.sender = msg.receiver = SERVER_VIDEO;
+	msg.result = 0;
+	/***************************/
 	switch(info.status){
+		case STATUS_WAIT:
+			info.status = STATUS_SETUP;
+			break;
 		case STATUS_RUN:
-			ret = send_iot_ack(&info.task.msg, &msg, MSG_VIDEO_START, info.task.msg.receiver, 0, 0, 0);
+			ret = send_message(info.task.msg.receiver, &msg);
 			goto exit;
 			break;
 		case STATUS_IDLE:
@@ -1135,8 +1224,16 @@ static void task_start(void)
 			else info.status = STATUS_ERROR;
 			break;
 		case STATUS_ERROR:
-			ret = send_iot_ack(&info.task.msg, &msg, MSG_VIDEO_START, info.task.msg.receiver, -1 ,0 ,0);
+			msg.result = -1;
+			ret = send_message(info.task.msg.receiver, &msg);
 			goto exit;
+			break;
+		case STATUS_SETUP:
+			if( video_init() == 0) info.status = STATUS_IDLE;
+			else info.status = STATUS_ERROR;
+			break;
+		default:
+			log_err("!!!!!!!unprocessed server status in task_start = %d", info.status);
 			break;
 	}
 	usleep(1000);
@@ -1153,10 +1250,20 @@ exit:
 static void task_stop(void)
 {
 	message_t msg;
-	int ret;
+	int ret = 0;
+	/**************************/
+	msg_init(&msg);
+	memcpy(&(msg.arg_pass), &(info.task.msg.arg_pass),sizeof(message_arg_t));
+	msg.message = info.task.msg.message | 0x1000;
+	msg.sender = msg.receiver = SERVER_VIDEO;
+	msg.result = 0;
+	/***************************/
 	switch(info.status){
+		case STATUS_WAIT:
+			info.status = STATUS_SETUP;
+			break;
 		case STATUS_IDLE:
-			ret = send_iot_ack(&info.task.msg, &msg, MSG_VIDEO_STOP, info.task.msg.receiver, 0, 0, 0);
+			ret = send_message(info.task.msg.receiver, &msg);
 			goto exit;
 			break;
 		case STATUS_RUN:
@@ -1164,7 +1271,11 @@ static void task_stop(void)
 			else info.status = STATUS_ERROR;
 			break;
 		case STATUS_ERROR:
-			ret = send_iot_ack(&info.task.msg, &msg, MSG_VIDEO_STOP, info.task.msg.receiver, -1,0 ,0);
+			msg.result = -1;
+			ret = send_message(info.task.msg.receiver, &msg);
+			break;
+		default:
+			log_err("!!!!!!!unprocessed server status in task_stop = %d", info.status);
 			break;
 	}
 	usleep(1000);
@@ -1181,7 +1292,8 @@ exit:
 static void task_default(void)
 {
 	int ret = 0;
-	switch( info.status){
+	message_t msg;
+	switch( info.status ){
 		case STATUS_NONE:
 			if( !misc_get_bit( info.thread_exit, VIDEO_INIT_CONDITION_CONFIG ) ) {
 				ret = video_config_video_read(&config);
@@ -1193,10 +1305,28 @@ static void task_default(void)
 					break;
 				}
 			}
+			if( !misc_get_bit( info.thread_exit, VIDEO_INIT_CONDITION_REALTEK ) ) {
+			    /********message body********/
+				msg_init(&msg);
+				msg.message = MSG_REALTEK_PROPERTY_GET;
+				msg.sender = msg.receiver = SERVER_VIDEO;
+				msg.arg_in.cat = REALTEK_PROPERTY_AV_STATUS;
+				server_realtek_message(&msg);
+				/****************************/
+			}
+			if( !misc_get_bit( info.thread_exit, VIDEO_INIT_CONDITION_MIIO_TIME ) ) {
+			    /********message body********/
+				msg_init(&msg);
+				msg.message = MSG_MIIO_PROPERTY_GET;
+				msg.sender = msg.receiver = SERVER_VIDEO;
+				msg.arg_in.cat = MIIO_PROPERTY_TIME_SYNC;
+				server_miio_message(&msg);
+				/****************************/
+			}
 			if( misc_full_bit( info.thread_exit, VIDEO_INIT_CONDITION_NUM ) )
 				info.status = STATUS_WAIT;
 			else
-				usleep(100000);
+				sleep(1);
 			break;
 		case STATUS_WAIT:
 			info.status = STATUS_SETUP;
@@ -1206,7 +1336,8 @@ static void task_default(void)
 			else info.status = STATUS_ERROR;
 			break;
 		case STATUS_IDLE:
-//			info.status = STATUS_START;
+			if( config.md.enable )
+				info.status = STATUS_START;
 			break;
 		case STATUS_START:
 			if( stream_start()==0 ) info.status = STATUS_RUN;
@@ -1222,6 +1353,9 @@ static void task_default(void)
 		case STATUS_ERROR:
 			info.task.func = task_error;
 			break;
+		default:
+			log_err("!!!!!!!unprocessed server status in task_default = %d", info.status);
+			break;
 		}
 	usleep(1000);
 	return;
@@ -1234,9 +1368,11 @@ static void *server_func(void)
 {
     signal(SIGINT, server_thread_termination);
     signal(SIGTERM, server_thread_termination);
- //   signal(SIGSEGV, manager_sigsegv);
 	misc_set_thread_name("server_video");
 	pthread_detach(pthread_self());
+	if( !message.init ) {
+		msg_buffer_init(&message, MSG_BUFFER_OVERFLOW_NO);
+	}
 	//default task
 	info.task.func = task_default;
 	info.task.start = STATUS_NONE;
@@ -1244,7 +1380,8 @@ static void *server_func(void)
 	while( !info.exit ) {
 		info.task.func();
 		server_message_proc();
-		heart_beat_proc();
+		if( info.status!=STATUS_ERROR )
+			heart_beat_proc();
 	}
 	if( info.exit ) {
 		while( info.thread_start ) {
@@ -1272,8 +1409,6 @@ static void *server_func(void)
 int server_video_start(void)
 {
 	int ret=-1;
-	msg_buffer_init(&message, MSG_BUFFER_OVERFLOW_NO);
-	pthread_rwlock_init(&info.lock, NULL);
 	ret = pthread_create(&info.id, NULL, server_func, NULL);
 	if(ret != 0) {
 		log_err("video server create error! ret = %d",ret);
@@ -1288,13 +1423,17 @@ int server_video_start(void)
 int server_video_message(message_t *msg)
 {
 	int ret=0,ret1;
+	if( !message.init ) {
+		log_err("video server is not ready for message processing!");
+		return -1;
+	}
 	ret = pthread_rwlock_wrlock(&message.lock);
 	if(ret)	{
 		log_err("add message lock fail, ret = %d\n", ret);
 		return ret;
 	}
 	ret = msg_buffer_push(&message, msg);
-	log_info("push into the video message queue: sender=%d, message=%d, ret=%d", msg->sender, msg->message, ret);
+	log_info("push into the video message queue: sender=%d, message=%x, ret=%d", msg->sender, msg->message, ret);
 	if( ret!=0 )
 		log_err("message push in video error =%d", ret);
 	ret1 = pthread_rwlock_unlock(&message.lock);

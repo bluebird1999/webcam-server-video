@@ -21,9 +21,11 @@
 //program header
 #include "../../tools/tools_interface.h"
 #include "../../server/miio/miio_interface.h"
+#include "../../server/recorder/recorder_interface.h"
 //server header
 #include "md.h"
 #include "config.h"
+#include "video_interface.h"
 
 /*
  * static
@@ -221,8 +223,9 @@ static int md_motioned(int idx, void *priv)
 static int md_received(int idx, struct rts_video_md_result *result, void *priv)
 {
 	int ret = 0;
-	int now = 0;
+	unsigned long long int now = 0;
 	static int last_report=0;
+	recorder_init_t init;
 	if (!result)
 		return -1;
 	log_err("motion data received\n");
@@ -236,13 +239,31 @@ static int md_received(int idx, struct rts_video_md_result *result, void *priv)
 				message_t msg;
 				/********message body********/
 				msg_init(&msg);
-//				msg.message = MSG_MICLOUD_WARNING_NOTICE;
+				msg.message = MSG_VIDEO_MOTION_NOTICE;
 				msg.sender = msg.receiver = SERVER_VIDEO;
-				msg.arg_in.cat = 0;
-				msg.arg_in.dog = 0;
-				msg.arg = bmp.vm_addr;
-				msg.arg_size = bmp.length;
+//				msg.arg = bmp.vm_addr;
+//				msg.arg_size = bmp.length;
+				msg.extra = &now;
+				msg.extra_size = sizeof(now);
 //				ret = server_micloud_message(msg);
+				/********message body********/
+				msg_init(&msg);
+				msg.message = MSG_RECORDER_ADD;
+				msg.sender = msg.receiver = SERVER_VIDEO;
+				init.video_channel = 0;
+				init.mode = RECORDER_MODE_BY_TIME;
+				init.type = RECORDER_TYPE_MOTION_DETECTION;
+				init.audio = 1;
+				init.start[0] = now;
+				init.stop[0] = now + config.recording_length;
+				init.repeat = 0;
+				init.repeat_interval = 0;
+				init.quality = 0;
+				msg.arg = &init;
+				msg.arg_size = sizeof(recorder_init_t);
+				msg.extra = &now;
+				msg.extra_size = sizeof(now);
+				ret = server_recorder_message(&msg);
 				/********message body********/
 				last_report = now;
 			}

@@ -169,6 +169,7 @@ typedef struct video_md_config_t {
 	int		cloud_report;
 	int		alarm_interval;
 	int		sensitivity;
+	int		recording_length;
 	char	start[MAX_SYSTEM_STRING_SIZE];
 	char	end[MAX_SYSTEM_STRING_SIZE];
 } video_md_config_t;
