@@ -17,7 +17,6 @@
 #include <rtsvideo.h>
 #include <rtsbmp.h>
 #include <malloc.h>
-#include <dmalloc.h>
 //program header
 #include "../../tools/tools_interface.h"
 #include "../../server/miio/miio_interface.h"
@@ -75,7 +74,7 @@ static int md_get_scheduler_time(char *input, scheduler_time_t *st, int *mode)
         end_hour_str[2] = '\0';
 		memcpy(end_min_str,timestr+3+3+3,2);
         end_min_str[2] = '\0';
-        log_info("time:%s:%s-%s:%s\n",start_hour_str,start_min_str,end_hour_str,end_min_str);
+        log_qcy(DEBUG_SERIOUS, "time:%s:%s-%s:%s\n",start_hour_str,start_min_str,end_hour_str,end_min_str);
         start_hour =  atoi(start_hour_str);
         start_min =  atoi(start_min_str);
         end_hour =  atoi(end_hour_str);
@@ -197,7 +196,7 @@ static int md_process_data(struct rts_video_md_result *result, md_bmp_data_t *bm
 	if (!bmp->vm_addr)
 		return -1;
 	memset(bmp->vm_addr, 0x0, bmp->length);
-	log_info("----count = %d----\n", result->count);
+	log_qcy(DEBUG_SERIOUS, "----count = %d----\n", result->count);
 	for (i = 0; i < result->count; i++) {
 		struct rts_video_md_type_data *md_data = result->results + i;
 		struct rts_video_md_data *data;
@@ -216,7 +215,7 @@ static int md_process_data(struct rts_video_md_result *result, md_bmp_data_t *bm
 
 static int md_motioned(int idx, void *priv)
 {
-	log_info("motion detected\n");
+	log_qcy(DEBUG_SERIOUS, "motion detected\n");
 	return 0;
 }
 
@@ -228,7 +227,7 @@ static int md_received(int idx, struct rts_video_md_result *result, void *priv)
 	recorder_init_t init;
 	if (!result)
 		return -1;
-	log_err("motion data received\n");
+	log_qcy(DEBUG_SERIOUS, "motion data received\n");
 	ret = md_process_data(result, priv);
 	if(!ret) {
 		if( config.cloud_report ) {
@@ -288,17 +287,17 @@ static int md_enable(int polling, int trig, unsigned int data_mode_mask, int wid
 		block->enable = 0;
 		if (i > 0)
 			continue;
-		log_info("%x %x %d\n",
+		log_qcy(DEBUG_SERIOUS, "%x %x %d\n",
 				block->supported_data_mode,
 				block->supported_detect_mode,
 				block->supported_grid_num);
 		data_mode_mask &= block->supported_data_mode;
 		if (!RTS_CHECK_BIT(block->supported_detect_mode, detect_mode)) {
-			log_err("detect mode %x is not support\n", detect_mode);
+			log_qcy(DEBUG_SERIOUS, "detect mode %x is not support\n", detect_mode);
 			continue;
 		}
 		if (GRID_R * GRID_C > block->supported_grid_num) {
-			log_err("grid size (%d,%d) is out of range\n", GRID_R, GRID_C);
+			log_qcy(DEBUG_SERIOUS, "grid size (%d,%d) is out of range\n", GRID_R, GRID_C);
 			continue;
 		}
 		len = RTS_DIV_ROUND_UP(GRID_R * GRID_C, 8);
@@ -392,7 +391,7 @@ int video_md_proc(void)
 	ret = rts_av_get_isp_md_result(attr, 0, &result);
 	if (ret)
 		return 0;
-	log_info("get data\n");
+	log_qcy(DEBUG_SERIOUS, "get data\n");
 	md_process_data(&result, &bmp);
 	status = 0;
 	return 0;
@@ -407,7 +406,7 @@ int video_md_init(video_md_config_t *md_config, int width, int height, scheduler
 	md_get_scheduler_time(config.end, st, md);
 	ret = rts_av_query_isp_md(&attr, width, height);
 	if (ret) {
-		log_err("query isp md attr fail, ret = %d\n", ret);
+		log_qcy(DEBUG_SERIOUS, "query isp md attr fail, ret = %d\n", ret);
 		video_md_release();
 	}
 	mask = RTS_VIDEO_MD_DATA_TYPE_AVGY |
@@ -418,18 +417,18 @@ int video_md_init(video_md_config_t *md_config, int width, int height, scheduler
            RTS_VIDEO_MD_DATA_TYPE_BACKC;
 	ret = md_enable(config.polling, config.trig, mask, width, height, config.sensitivity, &bmp);
 	if (ret) {
-		log_err("enable md fail\n");
+		log_qcy(DEBUG_SERIOUS, "enable md fail\n");
 		video_md_release();
 	}
 	if (config.polling) {
 		int i;
 		unsigned int mask = attr->blocks->data_mode_mask;
 		rts_av_init_md_result(&result, mask);
-		log_info("%d\n", result.count);
+		log_qcy(DEBUG_SERIOUS, "%d\n", result.count);
 		for (i = 0; i < result.count; i++) {
 			struct rts_video_md_type_data *pdata;
 			pdata = result.results + i;
-			log_info("0x%x\n", pdata->type);
+			log_qcy(DEBUG_SERIOUS, "0x%x\n", pdata->type);
 		}
 	}
 }

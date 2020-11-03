@@ -15,6 +15,7 @@
 #include <rtsavapi.h>
 #include <rtsvideo.h>
 #include "../../manager/global_interface.h"
+#include "../../manager/manager_interface.h"
 
 /*
  * define
@@ -38,17 +39,13 @@
 #define		AE_MANUAL_MODE_GAIN				6
 #define		AE_MANUAL_MODE_EXPOSURE_TIME 	7
 
-#define		OSD_FONT_PATH					"/opt/qcy/font/"
-#define		JPG_LIBRARY_PATH				"/mnt/nfs/media/"
-#define		MP4_LIBRARY_PATH				"/mnt/nfs/media/"
-
-#define 	CONFIG_VIDEO_PROFILE_PATH				"/opt/qcy/config/video_profile.config"
-#define 	CONFIG_VIDEO_ISP_PATH					"/opt/qcy/config/video_isp.config"
-#define 	CONFIG_VIDEO_H264_PATH					"/opt/qcy/config/video_h264.config"
-#define 	CONFIG_VIDEO_OSD_PATH					"/opt/qcy/config/video_osd.config"
-#define 	CONFIG_VIDEO_3ACTRL_PATH				"/opt/qcy/config/video_3actrl.config"
-#define 	CONFIG_VIDEO_JPG_PATH					"/opt/qcy/config/video_jpg.config"
-#define 	CONFIG_VIDEO_MD_PATH					"/opt/qcy/config/video_md.config"
+#define 	CONFIG_VIDEO_PROFILE_PATH		"config/video_profile.config"
+#define 	CONFIG_VIDEO_ISP_PATH			"config/video_isp.config"
+#define 	CONFIG_VIDEO_H264_PATH			"config/video_h264.config"
+#define 	CONFIG_VIDEO_OSD_PATH			"config/video_osd.config"
+#define 	CONFIG_VIDEO_3ACTRL_PATH		"config/video_3actrl.config"
+#define 	CONFIG_VIDEO_JPG_PATH			"config/video_jpg.config"
+#define 	CONFIG_VIDEO_MD_PATH			"config/video_md.config"
 
 /*
  * structure
@@ -158,7 +155,8 @@ typedef struct video_3actrl_config_t {
 } video_3actrl_config_t;
 
 typedef struct video_jpg_config_t {
-	int							enable;
+	int		enable;
+	char	image_path[MAX_SYSTEM_STRING_SIZE];
 	struct rts_jpgenc_attr		jpg_ctrl;
 } video_jpg_config_t;
 

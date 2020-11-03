@@ -49,5 +49,6 @@ typedef struct video_stream_t {
 /*
  * function
  */
+int video_get_debug_level(int type);
 
 #endif /* SERVER_VIDEO_VIDEO_H_ */
