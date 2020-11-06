@@ -27,6 +27,7 @@
 #define RUN_MODE_SEND_MISS		1
 #define	RUN_MODE_SEND_MICLOUD	2
 #define	RUN_MODE_MOTION_DETECT	3
+#define	RUN_MODE_MOTION			4
 
 #define		VIDEO_INIT_CONDITION_NUM			3
 #define		VIDEO_INIT_CONDITION_CONFIG			0
@@ -46,6 +47,11 @@ typedef struct video_stream_t {
 	int	frame;
 } video_stream_t;
 
+typedef struct video_md_run_t {
+	int 				started;
+	scheduler_time_t  	scheduler;
+	int					mode;
+} video_md_run_t;
 /*
  * function
  */

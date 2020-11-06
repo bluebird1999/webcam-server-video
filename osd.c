@@ -457,7 +457,7 @@ next:
 		last_frame = frame;
 	}
 	else {
-		usleep(10000);
+		usleep(1000);
 	}
 	return ret;
 }
@@ -537,10 +537,8 @@ int video_osd_release(void)
 		free( osd_run.image8888);
 		osd_run.image8888 = NULL;
 	}
-	if( osd_run.face != NULL)
-		FT_Done_Face(osd_run.face);
-    if( osd_run.library != NULL);
-    	FT_Done_FreeType(osd_run.library);
+	FT_Done_Face(osd_run.face);
+   	FT_Done_FreeType(osd_run.library);
     RTS_SAFE_RELEASE(osd_run.osd_attr, rts_av_release_osd2);
     last_frame = 0;
 	return ret;

@@ -45,7 +45,7 @@ static 	message_buffer_t	message;
 static 	server_info_t 		info;
 static	video_stream_t		stream;
 static	video_config_t		config;
-
+static	video_md_run_t		md_run;
 
 //function
 //common
@@ -340,8 +340,6 @@ static int video_snapshot(void)
 static int *video_md_func(void *arg)
 {
 	video_md_config_t ctrl;
-	scheduler_time_t  scheduler_time;
-	int mode;
 	int st;
     signal(SIGINT, server_thread_termination);
     signal(SIGTERM, server_thread_termination);
@@ -350,19 +348,19 @@ static int *video_md_func(void *arg)
     //init
     memcpy( &ctrl, (video_md_config_t*)arg, sizeof(video_md_config_t) );
     video_md_init( &ctrl, config.profile.profile[config.profile.quality].video.width,
-    		config.profile.profile[config.profile.quality].video.height,
-			&scheduler_time, &mode);
+    		config.profile.profile[config.profile.quality].video.height);
     server_set_status(STATUS_TYPE_THREAD_START, THREAD_MD, 1 );
     while( 1 ) {
     	st = info.status;
     	if( info.exit ) break;
-    	if( st != STATUS_START && st != STATUS_RUN )
+ /*   	if( st != STATUS_START && st != STATUS_RUN )
     		break;
+*/
+    	if( !md_run.started ) break;
     	else if( st == STATUS_START )
     		continue;
     	usleep(10);
-    	if( ctrl.enable && video_md_check_scheduler_time(&scheduler_time, &mode) )
-    		video_md_proc();
+   		video_md_proc();
     }
     //release
     log_qcy(DEBUG_SERIOUS, "-----------thread exit: server_video_md-----------");
@@ -549,16 +547,6 @@ static int stream_start(void)
 			log_qcy(DEBUG_SERIOUS, "osd thread create successful!");
 		}
 	}
-	if( config.md.enable ) {
-		//start the osd thread
-		ret = pthread_create(&md_id, NULL, video_md_func, (void*)&config.md);
-		if(ret != 0) {
-			log_qcy(DEBUG_SERIOUS, "md thread create error! ret = %d",ret);
-		 }
-		else {
-			log_qcy(DEBUG_SERIOUS, "md thread create successful!");
-		}
-	}
     return 0;
 }
 
@@ -575,6 +563,62 @@ static int stream_stop(void)
 		ret = rts_av_disable_chn(stream.h264);
 	if(stream.isp!=-1)
 		ret = rts_av_disable_chn(stream.isp);
+	return ret;
+}
+
+static int md_init_scheduler(void)
+{
+	int ret = 0;
+	ret = video_md_get_scheduler_time(config.md.end, &md_run.scheduler, &md_run.mode);
+	return ret;
+}
+static int md_check_scheduler(void)
+{
+	int ret;
+	message_t msg;
+	pthread_t md_id;
+	if( config.md.enable ) {
+		ret = video_md_check_scheduler_time(&md_run.scheduler, &md_run.mode);
+		if( ret==1 ) {
+			if( !md_run.started ) {
+				//start the md thread
+				ret = pthread_create(&md_id, NULL, video_md_func, (void*)&config.md);
+				if(ret != 0) {
+					log_qcy(DEBUG_SERIOUS, "md thread create error! ret = %d",ret);
+					return -1;
+				}
+				else {
+					log_qcy(DEBUG_INFO, "md thread create successful!");
+					md_run.started = 1;
+				    /********message body********/
+					msg_init(&msg);
+					msg.message = MSG_VIDEO_START;
+					msg.sender = msg.receiver = SERVER_VIDEO;
+				    server_video_message(&msg);
+					/****************************/
+				}
+			}
+		}
+		else {
+			if( md_run.started ) {
+				goto stop_md;
+			}
+		}
+	}
+	else {
+		if( md_run.started ) {
+			goto stop_md;
+		}
+	}
+	return ret;
+stop_md:
+	md_run.started = 0;
+	/********message body********/
+	msg_init(&msg);
+	msg.message = MSG_VIDEO_STOP;
+	msg.sender = msg.receiver = SERVER_VIDEO;
+	server_video_message(&msg);
+	/****************************/
 	return ret;
 }
 
@@ -638,6 +682,7 @@ static int video_init(void)
     		return -1;
     	}
 	}
+	md_init_scheduler();
 	video_isp_init(&config.isp);
 	return 0;
 }
@@ -772,6 +817,7 @@ static int server_release(void)
 	memset(&info,0,sizeof(server_info_t));
 	memset(&config,0,sizeof(video_config_t));
 	memset(&stream,0,sizeof(video_stream_t));
+	memset(&md_run,0,sizeof(video_md_run_t));
 	return ret;
 }
 
@@ -818,6 +864,7 @@ static int server_message_proc(void)
 				else if( msg.arg_in.cat == RECORDER_TYPE_MOTION_DETECTION )
 					misc_set_bit(&info.status2, RUN_MODE_MOTION_DETECT, 1);
 			}
+			if( msg.sender == SERVER_VIDEO) misc_set_bit(&info.status2, RUN_MODE_MOTION, 1);
 			if( info.status == STATUS_RUN ) {
 				ret = send_message(msg.receiver, &send_msg);
 				break;
@@ -836,6 +883,7 @@ static int server_message_proc(void)
 				else if( msg.arg_in.cat == RECORDER_TYPE_MOTION_DETECTION )
 					misc_set_bit(&info.status2, RUN_MODE_MOTION_DETECT, 0);
 			}
+			if( msg.sender == SERVER_VIDEO) misc_set_bit(&info.status2, RUN_MODE_MOTION, 0);
 			if( info.status != STATUS_RUN ) {
 				ret = send_message(msg.receiver, &send_msg);
 				break;
@@ -952,7 +1000,7 @@ static int server_message_proc(void)
 			}
 			break;
 		default:
-			log_qcy(DEBUG_SERIOUS, "not processed message = %d", msg.message);
+			log_qcy(DEBUG_SERIOUS, "not processed message = %x", msg.message);
 			break;
 	}
 	msg_free(&msg);
@@ -1108,9 +1156,6 @@ static void task_control(void)
 	msg.result = 0;
 	/***************************/
 	switch(info.status){
-		case STATUS_WAIT:
-			info.status = STATUS_SETUP;
-			break;
 		case STATUS_RUN:
 			if( !para_set ) info.status = STATUS_STOP;
 			else goto success_exit;
@@ -1144,11 +1189,13 @@ static void task_control(void)
 				strcpy( config.md.start, (char*)(info.task.msg.arg) );
 				log_qcy(DEBUG_SERIOUS, "changed the motion detection start = %s", config.md.start);
 				video_config_video_set(CONFIG_VIDEO_MD, &config.md);
+				md_init_scheduler();
 			}
 			else if( info.task.msg.arg_in.cat == VIDEO_PROPERTY_MOTION_END ) {
 				strcpy( config.md.end, (char*)(info.task.msg.arg) );
 				log_qcy(DEBUG_SERIOUS, "changed the motion detection end = %s", config.md.end);
 				video_config_video_set(CONFIG_VIDEO_MD, &config.md);
+				md_init_scheduler();
 			}
 			else if( info.task.msg.arg_in.cat == VIDEO_PROPERTY_CUSTOM_WARNING_PUSH ) {
 				config.md.cloud_report = *((int*)(info.task.msg.arg));
@@ -1337,8 +1384,7 @@ static void task_default(void)
 			else info.status = STATUS_ERROR;
 			break;
 		case STATUS_IDLE:
-			if( config.md.enable )
-				info.status = STATUS_START;
+			md_check_scheduler();
 			break;
 		case STATUS_START:
 			if( stream_start()==0 ) info.status = STATUS_RUN;
@@ -1346,6 +1392,7 @@ static void task_default(void)
 			break;
 		case STATUS_RUN:
 			if(video_main()!=0) info.status = STATUS_STOP;
+			md_check_scheduler();
 			break;
 		case STATUS_STOP:
 			if( stream_stop()==0 ) info.status = STATUS_IDLE;
