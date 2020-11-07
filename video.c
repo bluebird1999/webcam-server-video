@@ -413,7 +413,8 @@ static int *video_osd_func(void *arg)
     pthread_detach(pthread_self());
     //init
     memcpy( &ctrl,(video_osd_config_t*)arg, sizeof(video_osd_config_t));
-    ret = video_osd_init(&ctrl, stream.osd);
+    ret = video_osd_init(&ctrl, stream.osd, config.profile.profile[config.profile.quality].video.width,
+    		config.profile.profile[config.profile.quality].video.height);
     if( ret != 0) {
     	log_qcy(DEBUG_SERIOUS, "osd init error!");
     	goto exit;
