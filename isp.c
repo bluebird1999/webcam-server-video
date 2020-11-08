@@ -59,7 +59,7 @@ int video_isp_get_attr(unsigned int id)
 		log_qcy(DEBUG_SERIOUS, "get isp attr fail, ret = %d\n", ret);
 		return ret;
 	}
-	log_qcy(DEBUG_SERIOUS, "%s min = %d, max = %d, step = %d, default = %d, cur = %d\n",
+	log_qcy(DEBUG_VERBOSE, "%s min = %d, max = %d, step = %d, default = %d, cur = %d\n",
 			 ctrl.name, ctrl.minimum, ctrl.maximum,
 			 ctrl.step, ctrl.default_value, ctrl.current_value);
 	return 0;

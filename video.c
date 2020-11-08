@@ -275,7 +275,7 @@ static int video_set_property(message_t *msg)
 			mode = DAY_NIGHT_ON;
 		}
 		if(!ret) {
-			log_qcy(DEBUG_SERIOUS, "changed the smart night mode = %d", config.isp.smart_ir_mode);
+			log_qcy(DEBUG_INFO, "changed the smart night mode = %d", config.isp.smart_ir_mode);
 			video_config_video_set(CONFIG_VIDEO_ISP, &config.isp);
 		    /********message body********/
 			send_msg.arg_in.cat = DEVICE_CTRL_DAY_NIGHT_MODE;
@@ -290,7 +290,7 @@ static int video_set_property(message_t *msg)
 			ret = video_isp_set_attr(RTS_VIDEO_CTRL_ID_LDC, temp );
 			if(!ret) {
 				config.isp.ldc = temp;
-				log_qcy(DEBUG_SERIOUS, "changed the lens distortion correction = %d", config.isp.ldc);
+				log_qcy(DEBUG_INFO, "changed the lens distortion correction = %d", config.isp.ldc);
 				video_config_video_set(CONFIG_VIDEO_ISP, &config.isp);
 			}
 		}
@@ -363,7 +363,7 @@ static int *video_md_func(void *arg)
    		video_md_proc();
     }
     //release
-    log_qcy(DEBUG_SERIOUS, "-----------thread exit: server_video_md-----------");
+    log_qcy(DEBUG_INFO, "-----------thread exit: server_video_md-----------");
     video_md_release();
     server_set_status(STATUS_TYPE_THREAD_START, THREAD_MD, 0 );
     pthread_exit(0);
@@ -395,7 +395,7 @@ static int *video_3acontrol_func(void *arg)
     	video_focus_proc(&ctrl.af_para,stream.frame);
     }
     //release
-    log_qcy(DEBUG_SERIOUS, "-----------thread exit: server_video_3a_control-----------");
+    log_qcy(DEBUG_INFO, "-----------thread exit: server_video_3a_control-----------");
     video_white_balance_release();
     video_exposure_release();
     video_focus_release();
@@ -431,7 +431,7 @@ static int *video_osd_func(void *arg)
     }
     //release
 exit:
-    log_qcy(DEBUG_SERIOUS, "-----------thread exit: server_video_osd-----------");
+    log_qcy(DEBUG_INFO, "-----------thread exit: server_video_osd-----------");
     video_osd_release();
     server_set_status(STATUS_TYPE_THREAD_START, THREAD_OSD, 0 );
     pthread_exit(0);
@@ -545,7 +545,7 @@ static int stream_start(void)
 			log_qcy(DEBUG_SERIOUS, "osd thread create error! ret = %d",ret);
 		 }
 		else {
-			log_qcy(DEBUG_SERIOUS, "osd thread create successful!");
+			log_qcy(DEBUG_INFO, "osd thread create successful!");
 		}
 	}
     return 0;
@@ -632,13 +632,13 @@ static int video_init(void)
 		log_qcy(DEBUG_SERIOUS, "fail to create isp chn, ret = %d", stream.isp);
 		return -1;
 	}
-	log_qcy(DEBUG_SERIOUS, "isp chnno:%d", stream.isp);
+	log_qcy(DEBUG_INFO, "isp chnno:%d", stream.isp);
 	stream.h264 = rts_av_create_h264_chn(&config.h264.h264_attr);
 	if (stream.h264 < 0) {
 		log_qcy(DEBUG_SERIOUS, "fail to create h264 chn, ret = %d", stream.h264);
 		return -1;
 	}
-	log_qcy(DEBUG_SERIOUS, "h264 chnno:%d", stream.h264);
+	log_qcy(DEBUG_INFO, "h264 chnno:%d", stream.h264);
 	config.profile.profile[config.profile.quality].fmt = RTS_V_FMT_YUV420SEMIPLANAR;
 	ret = rts_av_set_profile(stream.isp, &config.profile.profile[config.profile.quality]);
 	if (ret) {
@@ -651,7 +651,7 @@ static int video_init(void)
         	log_qcy(DEBUG_SERIOUS, "fail to create osd chn, ret = %d\n", stream.osd);
         	return -1;
         }
-        log_qcy(DEBUG_SERIOUS, "osd chnno:%d", stream.osd);
+        log_qcy(DEBUG_INFO, "osd chnno:%d", stream.osd);
         ret = rts_av_bind(stream.isp, stream.osd);
     	if (ret) {
     		log_qcy(DEBUG_SERIOUS, "fail to bind isp and osd, ret %d", ret);
@@ -676,7 +676,7 @@ static int video_init(void)
                 log_qcy(DEBUG_SERIOUS, "fail to create jpg chn, ret = %d\n", stream.jpg);
                 return -1;
         }
-        log_qcy(DEBUG_SERIOUS, "jpg chnno:%d", stream.jpg);
+        log_qcy(DEBUG_INFO, "jpg chnno:%d", stream.jpg);
     	ret = rts_av_bind(stream.isp, stream.jpg);
     	if (ret) {
     		log_qcy(DEBUG_SERIOUS, "fail to bind isp and jpg, ret %d", ret);
@@ -700,15 +700,15 @@ static int video_main(void)
 	if (buffer) {
 		if( misc_get_bit(info.status2, RUN_MODE_SEND_MISS) ) {
 			if( write_video_buffer(buffer, MSG_MISS_VIDEO_DATA, SERVER_MISS, 0) != 0 )
-				log_qcy(DEBUG_SERIOUS, "Miss ring buffer push failed!");
+				log_qcy(DEBUG_WARNING, "Miss ring buffer push failed!");
 		}
 		if( misc_get_bit(info.status2, RUN_MODE_SAVE) ) {
 			if( write_video_buffer(buffer, MSG_RECORDER_VIDEO_DATA, SERVER_RECORDER, RECORDER_TYPE_NORMAL) != 0 )
-				log_qcy(DEBUG_SERIOUS, "Recorder ring buffer push failed!");
+				log_qcy(DEBUG_WARNING, "Recorder ring buffer push failed!");
 		}
 		if( misc_get_bit(info.status2, RUN_MODE_MOTION_DETECT) ) {
 			if( write_video_buffer(buffer, MSG_RECORDER_VIDEO_DATA, SERVER_RECORDER, RECORDER_TYPE_MOTION_DETECTION) != 0 )
-				log_qcy(DEBUG_SERIOUS, "Recorder ring buffer push failed!");
+				log_qcy(DEBUG_WARNING, "Recorder ring buffer push failed!");
 		}
 		if( misc_get_bit(info.status2, RUN_MODE_SEND_MICLOUD) ) {
 /*	wait for other server
@@ -1089,7 +1089,7 @@ static void task_control_ext(void)
 		case STATUS_WAIT:
 			if( info.task.msg.arg_in.cat == VIDEO_PROPERTY_TIME_WATERMARK ) {
 				config.osd.enable = *((int*)(info.task.msg.arg));
-				log_qcy(DEBUG_SERIOUS, "changed the osd switch = %d", config.osd.enable);
+				log_qcy(DEBUG_INFO, "changed the osd switch = %d", config.osd.enable);
 				video_config_video_set(CONFIG_VIDEO_OSD,  &config.osd);
 			}
 			else if( info.task.msg.arg_in.cat == VIDEO_PROPERTY_IMAGE_ROLLOVER ) {
@@ -1102,7 +1102,7 @@ static void task_control_ext(void)
 					config.isp.flip = 1;
 					config.isp.mirror = 1;
 				}
-				log_qcy(DEBUG_SERIOUS, "changed the image rollover, flip = %d, mirror = %d ", config.isp.flip, config.isp.mirror );
+				log_qcy(DEBUG_INFO, "changed the image rollover, flip = %d, mirror = %d ", config.isp.flip, config.isp.mirror );
 				video_config_video_set(CONFIG_VIDEO_ISP,  &config.isp);
 			}
 			para_set = 1;
@@ -1168,39 +1168,39 @@ static void task_control(void)
 		case STATUS_IDLE:
 			if( info.task.msg.arg_in.cat == VIDEO_PROPERTY_QUALITY ) {
 				config.profile.quality = *((int*)(info.task.msg.arg));
-				log_qcy(DEBUG_SERIOUS, "changed the quality = %d", config.profile.quality);
+				log_qcy(DEBUG_INFO, "changed the quality = %d", config.profile.quality);
 				video_config_video_set(CONFIG_VIDEO_PROFILE, &config.profile);
 			}
 			else if( info.task.msg.arg_in.cat == VIDEO_PROPERTY_MOTION_SWITCH ) {
 				config.md.enable = *((int*)(info.task.msg.arg));
-				log_qcy(DEBUG_SERIOUS, "changed the motion switch = %d", config.md.enable);
+				log_qcy(DEBUG_INFO, "changed the motion switch = %d", config.md.enable);
 				video_config_video_set(CONFIG_VIDEO_MD, &config.md);
 			}
 			else if( info.task.msg.arg_in.cat == VIDEO_PROPERTY_MOTION_ALARM_INTERVAL ) {
 				config.md.alarm_interval = *((int*)(info.task.msg.arg));
-				log_qcy(DEBUG_SERIOUS, "changed the motion detection alarm interval = %d", config.md.alarm_interval);
+				log_qcy(DEBUG_INFO, "changed the motion detection alarm interval = %d", config.md.alarm_interval);
 				video_config_video_set(CONFIG_VIDEO_MD, &config.md);
 			}
 			else if( info.task.msg.arg_in.cat == VIDEO_PROPERTY_MOTION_SENSITIVITY ) {
 				config.md.sensitivity = *((int*)(info.task.msg.arg));
-				log_qcy(DEBUG_SERIOUS, "changed the motion detection sensitivity = %d", config.md.sensitivity);
+				log_qcy(DEBUG_INFO, "changed the motion detection sensitivity = %d", config.md.sensitivity);
 				video_config_video_set(CONFIG_VIDEO_MD, &config.md);
 			}
 			else if( info.task.msg.arg_in.cat == VIDEO_PROPERTY_MOTION_START ) {
 				strcpy( config.md.start, (char*)(info.task.msg.arg) );
-				log_qcy(DEBUG_SERIOUS, "changed the motion detection start = %s", config.md.start);
+				log_qcy(DEBUG_INFO, "changed the motion detection start = %s", config.md.start);
 				video_config_video_set(CONFIG_VIDEO_MD, &config.md);
 				md_init_scheduler();
 			}
 			else if( info.task.msg.arg_in.cat == VIDEO_PROPERTY_MOTION_END ) {
 				strcpy( config.md.end, (char*)(info.task.msg.arg) );
-				log_qcy(DEBUG_SERIOUS, "changed the motion detection end = %s", config.md.end);
+				log_qcy(DEBUG_INFO, "changed the motion detection end = %s", config.md.end);
 				video_config_video_set(CONFIG_VIDEO_MD, &config.md);
 				md_init_scheduler();
 			}
 			else if( info.task.msg.arg_in.cat == VIDEO_PROPERTY_CUSTOM_WARNING_PUSH ) {
 				config.md.cloud_report = *((int*)(info.task.msg.arg));
-				log_qcy(DEBUG_SERIOUS, "changed the motion detection cloud push = %d", config.md.cloud_report);
+				log_qcy(DEBUG_INFO, "changed the motion detection cloud push = %d", config.md.cloud_report);
 				video_config_video_set(CONFIG_VIDEO_MD, &config.md);
 			    /********message body********/
 /*	wait for other server
@@ -1443,7 +1443,7 @@ static void *server_func(void)
 		/***************************/
 	}
 	server_release();
-	log_qcy(DEBUG_SERIOUS, "-----------thread exit: server_video-----------");
+	log_qcy(DEBUG_INFO, "-----------thread exit: server_video-----------");
 	pthread_exit(0);
 }
 
@@ -1463,7 +1463,7 @@ int server_video_start(void)
 		 return ret;
 	 }
 	else {
-		log_qcy(DEBUG_SERIOUS, "video server create successful!");
+		log_qcy(DEBUG_INFO, "video server create successful!");
 		return 0;
 	}
 }
@@ -1481,10 +1481,10 @@ int server_video_message(message_t *msg)
 		return ret;
 	}
 	ret = msg_buffer_push(&message, msg);
-	log_qcy(DEBUG_SERIOUS, "push into the video message queue: sender=%d, message=%x, ret=%d, head=%d, tail=%d", msg->sender, msg->message, ret,
+	log_qcy(DEBUG_VERBOSE, "push into the video message queue: sender=%d, message=%x, ret=%d, head=%d, tail=%d", msg->sender, msg->message, ret,
 			message.head, message.tail);
 	if( ret!=0 )
-		log_qcy(DEBUG_SERIOUS, "message push in video error =%d", ret);
+		log_qcy(DEBUG_WARNING, "message push in video error =%d", ret);
 	ret1 = pthread_rwlock_unlock(&message.lock);
 	if (ret1)
 		log_qcy(DEBUG_SERIOUS, "add message unlock fail, ret = %d\n", ret1);

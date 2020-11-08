@@ -316,7 +316,7 @@ int video_md_get_scheduler_time(char *input, scheduler_time_t *st, int *mode)
         end_hour_str[2] = '\0';
 		memcpy(end_min_str,timestr+3+3+3,2);
         end_min_str[2] = '\0';
-        log_qcy(DEBUG_SERIOUS, "time:%s:%s-%s:%s\n",start_hour_str,start_min_str,end_hour_str,end_min_str);
+        log_qcy(DEBUG_INFO, "time:%s:%s-%s:%s\n",start_hour_str,start_min_str,end_hour_str,end_min_str);
         start_hour =  atoi(start_hour_str);
         start_min =  atoi(start_min_str);
         end_hour =  atoi(end_hour_str);
@@ -437,11 +437,11 @@ int video_md_init(video_md_config_t *md_config, int width, int height)
 		int i;
 		unsigned int mask = attr->blocks->data_mode_mask;
 		rts_av_init_md_result(&result, mask);
-		log_qcy(DEBUG_SERIOUS, "%d\n", result.count);
+		log_qcy(DEBUG_INFO, "%d\n", result.count);
 		for (i = 0; i < result.count; i++) {
 			struct rts_video_md_type_data *pdata;
 			pdata = result.results + i;
-			log_qcy(DEBUG_SERIOUS, "0x%x\n", pdata->type);
+			log_qcy(DEBUG_INFO, "0x%x\n", pdata->type);
 		}
 	}
 }
