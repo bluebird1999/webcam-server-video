@@ -44,7 +44,10 @@
 static int last_frame;
 static struct rts_video_osd2_attr 	*osd_attr;
 static osd_run_t					osd_run;
-static char patt[] = {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '-', ' '};
+static char cnum = 13;
+static char patt[]     = {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '-', ' ', ':'};
+static char offset_x[] = { 0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   2,   0,   2};
+static char offset_y[] = { 0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   1,   0,   1};
 //function
 static int osd_image_to_8888(unsigned char *src, unsigned char *dst, unsigned int len);
 static int osd_draw_image_pattern(FT_Bitmap *bitmap, FT_Int x, FT_Int y, unsigned char *buf, int flag_rotate, int flag_ch);
@@ -127,6 +130,8 @@ static int osd_get_picture_from_pattern(osd_text_info_t *txt)
 			val = 10;
 		else if(text[i] == ' ')
 			val = 11;
+		else if(text[i] == ':')
+			val = 12;
 		else
 			val = (int)(text[i] - '0');
 		if (osd_run.rotate) {
@@ -151,7 +156,7 @@ static int osd_get_picture_from_pattern(osd_text_info_t *txt)
 
 static int osd_load_char(unsigned short c, unsigned char *pdata)
 {
-	int ret=0;
+	int ret=0, j=0;
 	FT_GlyphSlot  	slot;
 	FT_Matrix     	matrix;                 /* transformation matrix */
 	FT_Vector     	pen;
@@ -179,12 +184,15 @@ static int osd_load_char(unsigned short c, unsigned char *pdata)
 				origin_y = osd_run.pixel_size / 2;
 	}
 	else {
-		angle_tmp = 0.0;
-		target_height = osd_run.pixel_size;
 		origin_x = 0;
-		if( c == '-')
-			origin_x += 3;
-		origin_y = osd_run.pixel_size;// - osd_run.offset_y;
+		origin_y = osd_run.pixel_size;
+		for(j=0;j<cnum;j++) {
+			if( patt[j] == c ) {
+				origin_x += offset_x[j] * (int)(osd_run.pixel_size / 16 );
+				origin_y -= offset_y[j] * (int)(osd_run.pixel_size / 16 );
+				break;
+			}
+		}
 	}
 	FT_Face *pface = &osd_run.face;
 	angle = (angle_tmp / 360) * 3.14159 * 2;
@@ -419,7 +427,7 @@ int video_osd_proc(video_osd_config_t *ctrl, int frame)
 		tv_prev.tv_usec = tv.tv_usec;
 		now = time(NULL);
 		localtime_r(&now, &tm);
-		sprintf(now_time, "%04d-%02d-%02d %02d-%02d-%02d", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
+		sprintf(now_time, "%04d-%02d-%02d %02d:%02d:%02d", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
 				tm.tm_hour, tm.tm_min, tm.tm_sec);
 		text_tm.text = now_time;
 		text_tm.cnt = strlen(now_time);
