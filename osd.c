@@ -42,7 +42,7 @@
  */
 //variable
 static int last_frame;
-static struct rts_video_osd2_attr 	*osd_attr;
+static struct rts_video_osd_attr 	*osd_attr;
 static osd_run_t					osd_run;
 static char cnum = 13;
 static char patt[]     = {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '-', ' ', ':'};
@@ -53,10 +53,10 @@ static int osd_image_to_8888(unsigned char *src, unsigned char *dst, unsigned in
 static int osd_draw_image_pattern(FT_Bitmap *bitmap, FT_Int x, FT_Int y, unsigned char *buf, int flag_rotate, int flag_ch);
 static int osd_get_picture_from_pattern(osd_text_info_t *txt);
 static int osd_load_char(unsigned short c, unsigned char *pdata);
-static int osd_set_osd2_timedate(osd_text_info_t *text, int blkidx);
+static int osd_set_osd_timedate(osd_text_info_t *text, int blkidx);
 static int osd_adjust_txt_picture(char *txt, unsigned char *dst, unsigned int len);
-static int osd_set_osd2_text(void);
-static int osd_set_osd2_color_table(void);
+static int osd_set_osd_text(void);
+static int osd_set_osd_color_table(void);
 
 /*
  * %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -184,6 +184,10 @@ static int osd_load_char(unsigned short c, unsigned char *pdata)
 				origin_y = osd_run.pixel_size / 2;
 	}
 	else {
+		angle_tmp = 0.0;
+		target_height = osd_run.pixel_size;
+		angle_tmp = 0.0;
+		target_height = osd_run.pixel_size;
 		origin_x = 0;
 		origin_y = osd_run.pixel_size;
 		for(j=0;j<cnum;j++) {
@@ -219,12 +223,12 @@ static int osd_load_char(unsigned short c, unsigned char *pdata)
 	return ret;
 }
 
-static int osd_set_osd2_timedate(osd_text_info_t *text, int blkidx)
+static int osd_set_osd_timedate(osd_text_info_t *text, int blkidx)
 {
 	int ret = 0;
 	struct rts_video_osd2_block *block;
 	if ( !osd_run.osd_attr ) {
-		log_qcy(DEBUG_SERIOUS, "osd2 attribute isn't initialized!");
+		log_qcy(DEBUG_SERIOUS, "osd attribute isn't initialized!");
 		return -1;
 	}
 	ret = osd_get_picture_from_pattern(text);
@@ -294,7 +298,7 @@ static int osd_adjust_txt_picture(char *txt, unsigned char *dst, unsigned int le
 	return 0;
 }
 
-static int osd_set_osd2_text(void)
+static int osd_set_osd_text(void)
 {
 	struct rts_video_osd2_block *block;
 	char show_txt[] = "QCY";
@@ -380,7 +384,7 @@ static int osd_set_osd2_text(void)
 	return ret;
 }
 
-static int osd_set_osd2_color_table(void)
+static int osd_set_osd_color_table(void)
 {
 	int ret;
 	unsigned int val = 0xffffffff; /*green(from high to low: r, g, b, a)*/
@@ -462,7 +466,7 @@ int video_osd_proc(video_osd_config_t *ctrl, int frame)
 		}
 next:
 */
-		ret = osd_set_osd2_timedate(&text_tm, 0);
+		ret = osd_set_osd_timedate(&text_tm, 0);
 		if (ret < 0) {
 			log_qcy(DEBUG_SERIOUS, "%s, set osd2 attr fail\n", __func__);
 			video_osd_release();
@@ -493,24 +497,24 @@ int video_osd_init(video_osd_config_t *ctrl, int stream, int width, int height)
 	osd_run.height = height;
 	osd_run.color = ctrl->time_color;
 	if( width >= 1920 ) {
-		osd_run.pixel_size = 36;
+		osd_run.pixel_size = 40;
 		osd_run.offset_x = 12;
 		osd_run.offset_y = 10;
 	}
 	else if( width >= 1280 ) {
-		osd_run.pixel_size = 24;
+		osd_run.pixel_size = 32;
 		osd_run.offset_x = 8;
 		osd_run.offset_y = 6;
 	}
 	else if( width >= 864 ){
-		osd_run.pixel_size = 16;
+		osd_run.pixel_size = 22;
 		osd_run.offset_x = 6;
 		osd_run.offset_y = 4;
 	}
 	else {
 		osd_run.offset_x = 4;
 		osd_run.offset_y = 2;
-		osd_run.pixel_size = 12;
+		osd_run.pixel_size = 16;
 	}
 	if( tm.tm_hour >= 18 ) osd_run.color = 0xFF;
 	else osd_run.color = 0x00;
