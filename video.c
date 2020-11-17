@@ -857,9 +857,7 @@ static int server_message_proc(void)
 	/***************************/
 	switch(msg.message) {
 		case MSG_VIDEO_START:
-			if( (msg.sender == SERVER_MISS)
-					|| (msg.sender == SERVER_MIIO) )
-				misc_set_bit(&info.status2, RUN_MODE_SEND_MISS, 1);
+			if( msg.sender == SERVER_MISS ) misc_set_bit(&info.status2, RUN_MODE_SEND_MISS, 1);
 			if( msg.sender == SERVER_MICLOUD) misc_set_bit(&info.status2, RUN_MODE_SEND_MICLOUD, 1);
 			if( msg.sender == SERVER_RECORDER) {
 				if( msg.arg_in.cat == RECORDER_TYPE_NORMAL)
@@ -878,9 +876,7 @@ static int server_message_proc(void)
 			info.msg_lock = 1;
 			break;
 		case MSG_VIDEO_STOP:
-			if( (msg.sender == SERVER_MISS)
-					|| (msg.sender == SERVER_MIIO) )
-				misc_set_bit(&info.status2, RUN_MODE_SEND_MISS, 0);
+			if( msg.sender == SERVER_MISS) misc_set_bit(&info.status2, RUN_MODE_SEND_MISS, 0);
 			if( msg.sender == SERVER_MICLOUD) misc_set_bit(&info.status2, RUN_MODE_SEND_MICLOUD, 0);
 			if( msg.sender == SERVER_RECORDER) {
 				if( msg.arg_in.cat == RECORDER_TYPE_NORMAL)
@@ -1437,6 +1433,7 @@ static void *server_func(void)
 	}
 	if( info.exit ) {
 		while( info.thread_start ) {
+			log_qcy(DEBUG_INFO, "---------------locked video---- %d", info.thread_start);
 		}
 	    /********message body********/
 		message_t msg;
