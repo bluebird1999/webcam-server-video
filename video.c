@@ -278,9 +278,17 @@ static int video_set_property(message_t *msg)
 			log_qcy(DEBUG_INFO, "changed the smart night mode = %d", config.isp.smart_ir_mode);
 			video_config_video_set(CONFIG_VIDEO_ISP, &config.isp);
 		    /********message body********/
-			send_msg.arg_in.cat = DEVICE_CTRL_DAY_NIGHT_MODE;
-			send_msg.arg = (void *)&mode;
-			send_msg.arg_size = sizeof(mode);
+			message_t dev_send_msg;
+			device_iot_config_t device_iot_tmp;
+			msg_init(&dev_send_msg);
+			memset(&device_iot_tmp, 0 , sizeof(device_iot_config_t));
+			device_iot_tmp.day_night_mode = mode;
+			dev_send_msg.message = MSG_DEVICE_CTRL_DIRECT;
+			dev_send_msg.sender = dev_send_msg.receiver = SERVER_VIDEO;
+			dev_send_msg.arg = (void*)&device_iot_tmp;
+			dev_send_msg.arg_in.cat = DEVICE_CTRL_DAY_NIGHT_MODE;
+			dev_send_msg.arg_size = sizeof(device_iot_config_t);
+			server_device_message(&dev_send_msg);
 			/***************************/
 		}
 	}
@@ -363,9 +371,10 @@ static int *video_md_func(void *arg)
    		video_md_proc();
     }
     //release
-    log_qcy(DEBUG_INFO, "-----------thread exit: server_video_md-----------");
     video_md_release();
+    sleep(1);
     server_set_status(STATUS_TYPE_THREAD_START, THREAD_MD, 0 );
+    log_qcy(DEBUG_INFO, "-----------thread exit: server_video_md-----------");
     pthread_exit(0);
 }
 
