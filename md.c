@@ -168,25 +168,26 @@ static int md_process_data(struct rts_video_md_result *result, md_bmp_data_t *bm
 	unsigned int bytesused = 0;
 	if (!result)
 		return -1;
-	if (!bmp)
-		return -1;
-	if (!bmp->vm_addr)
-		return -1;
-	memset(bmp->vm_addr, 0x0, bmp->length);
-	log_qcy(DEBUG_INFO, "----count = %d----\n", result->count);
-	for (i = 0; i < result->count; i++) {
-		struct rts_video_md_type_data *md_data = result->results + i;
-		struct rts_video_md_data *data;
-		if (!md_data->data)
-			continue;
-		data = md_data->data;
-		if (bytesused + GRID_C * GRID_R > bmp->length)
-			return -1;
-		md_copy_data(data->vm_addr, data->bpp, GRID_C, GRID_R, bmp->width,
-				bmp->vm_addr + bytesused);
-		bytesused += GRID_C * (GRID_R + 1);
+	if ( bmp && bmp->vm_addr) {
+		memset(bmp->vm_addr, 0x0, bmp->length);
+		log_qcy(DEBUG_INFO, "----count = %d----\n", result->count);
+		for (i = 0; i < result->count; i++) {
+			struct rts_video_md_type_data *md_data = result->results + i;
+			struct rts_video_md_data *data;
+			if (!md_data->data)
+				continue;
+			data = md_data->data;
+			if (bytesused + GRID_C * GRID_R > bmp->length)
+				return -1;
+			md_copy_data(data->vm_addr, data->bpp, GRID_C, GRID_R, bmp->width,
+					bmp->vm_addr + bytesused);
+			bytesused += GRID_C * (GRID_R + 1);
+		}
+//		md_save_data(bmp);
 	}
-//	md_save_data(bmp);
+	else {
+//		return 0;
+	}
 	return 0;
 }
 
@@ -413,7 +414,7 @@ int video_md_proc(void)
 
 int video_md_init(video_md_config_t *md_config, int width, int height)
 {
-	int ret;
+	int ret = 0;
 	int mask;
 	memset(&bmp, 0, sizeof(bmp));
 	memcpy(&config, md_config, sizeof(video_md_config_t) );
@@ -428,7 +429,7 @@ int video_md_init(video_md_config_t *md_config, int width, int height)
            RTS_VIDEO_MD_DATA_TYPE_BACKY |
            RTS_VIDEO_MD_DATA_TYPE_BACKF |
            RTS_VIDEO_MD_DATA_TYPE_BACKC;
-	ret = md_enable(config.polling, config.trig, mask, width, height, config.sensitivity, &bmp);
+	ret = md_enable(config.polling, config.trig, mask, width, height, config.sensitivity, NULL);
 	if (ret) {
 		log_qcy(DEBUG_SERIOUS, "enable md fail\n");
 		video_md_release();
@@ -444,6 +445,7 @@ int video_md_init(video_md_config_t *md_config, int width, int height)
 			log_qcy(DEBUG_INFO, "0x%x\n", pdata->type);
 		}
 	}
+	return ret;
 }
 
 int video_md_release(void)

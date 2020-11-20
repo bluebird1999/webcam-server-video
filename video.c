@@ -51,7 +51,8 @@ static	video_md_run_t		md_run;
 //common
 static void *server_func(void);
 static int server_message_proc(void);
-static int server_release(void);
+static int server_release_1(void);
+static int server_release_2(void);
 static int server_restart(void);
 static void task_default(void);
 static void task_error(void);
@@ -349,9 +350,11 @@ static int *video_md_func(void *arg)
 {
 	video_md_config_t ctrl;
 	int st;
+	char fname[MAX_SYSTEM_STRING_SIZE];
     signal(SIGINT, server_thread_termination);
     signal(SIGTERM, server_thread_termination);
-    misc_set_thread_name("server_video_md");
+    sprintf(fname, "md-%d",time_get_now_stamp());
+    misc_set_thread_name(fname);
     pthread_detach(pthread_self());
     //init
     memcpy( &ctrl, (video_md_config_t*)arg, sizeof(video_md_config_t) );
@@ -361,20 +364,15 @@ static int *video_md_func(void *arg)
     while( 1 ) {
     	st = info.status;
     	if( info.exit ) break;
- /*   	if( st != STATUS_START && st != STATUS_RUN )
-    		break;
-*/
     	if( !md_run.started ) break;
     	else if( st == STATUS_START )
     		continue;
-    	usleep(10);
-   		video_md_proc();
+ 		video_md_proc();
     }
     //release
     video_md_release();
-    sleep(1);
     server_set_status(STATUS_TYPE_THREAD_START, THREAD_MD, 0 );
-    log_qcy(DEBUG_INFO, "-----------thread exit: server_video_md-----------");
+    log_qcy(DEBUG_INFO, "-----------thread exit: %s-----------",fname);
     pthread_exit(0);
 }
 
@@ -404,11 +402,11 @@ static int *video_3acontrol_func(void *arg)
     	video_focus_proc(&ctrl.af_para,stream.frame);
     }
     //release
-    log_qcy(DEBUG_INFO, "-----------thread exit: server_video_3a_control-----------");
     video_white_balance_release();
     video_exposure_release();
     video_focus_release();
     server_set_status(STATUS_TYPE_THREAD_START, THREAD_3ACTRL, 0 );
+    log_qcy(DEBUG_INFO, "-----------thread exit: server_video_3a_control-----------");
     pthread_exit(0);
 }
 
@@ -440,9 +438,9 @@ static int *video_osd_func(void *arg)
     }
     //release
 exit:
-    log_qcy(DEBUG_INFO, "-----------thread exit: server_video_osd-----------");
     video_osd_release();
     server_set_status(STATUS_TYPE_THREAD_START, THREAD_OSD, 0 );
+    log_qcy(DEBUG_INFO, "-----------thread exit: server_video_osd-----------");
     pthread_exit(0);
 }
 
@@ -779,7 +777,7 @@ static int write_video_buffer(struct rts_av_buffer *data, int id, int target, in
 static int server_set_status(int type, int st, int value)
 {
 	int ret=-1;
-	ret = pthread_rwlock_wrlock(&info.lock);
+	ret = pthread_rwlock_trywrlock(&info.lock);
 	if(ret)	{
 		log_qcy(DEBUG_SERIOUS, "add lock fail, ret = %d", ret);
 		return ret;
@@ -829,9 +827,11 @@ static int server_release_1(void)
 static int server_release_2(void)
 {
 	int ret = 0;
+	int retain_exit = info.exit;
 	msg_buffer_release(&message);
 	msg_free(&info.task.msg);
 	memset(&info,0,sizeof(server_info_t));
+	info.exit = retain_exit;
 	memset(&config,0,sizeof(video_config_t));
 	memset(&stream,0,sizeof(video_stream_t));
 	memset(&md_run,0,sizeof(video_md_run_t));
@@ -1030,7 +1030,7 @@ static int heart_beat_proc(void)
 	message_t msg;
 	long long int tick = 0;
 	tick = time_get_now_stamp();
-	if( (tick - info.tick) > SERVER_HEARTBEAT_INTERVAL ) {
+	if( (tick - info.tick) > 1 ) {
 		info.tick = tick;
 	    /********message body********/
 		msg_init(&msg);
@@ -1475,6 +1475,7 @@ static void *server_func(void)
 int server_video_start(void)
 {
 	int ret=-1;
+	info.exit = 0;
 	ret = pthread_create(&info.id, NULL, server_func, NULL);
 	if(ret != 0) {
 		log_qcy(DEBUG_SERIOUS, "video server create error! ret = %d",ret);
