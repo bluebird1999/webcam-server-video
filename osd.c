@@ -41,8 +41,6 @@
  * static
  */
 //variable
-static int last_frame;
-static struct rts_video_osd_attr 	*osd_attr;
 static osd_run_t					osd_run;
 static char cnum = 13;
 static char patt[]     = {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '-', ' ', ':'};
@@ -406,103 +404,34 @@ static int osd_set_osd_color_table(void)
 	return 0;
 }
 
-/*
- * interface
- */
-int video_osd_proc(video_osd_config_t *ctrl, int frame)
+static int video_osd_release_1(void)
 {
-	char now_time[9] = "00:00:00";
-	char now_date[11] = "2017:01:01";
-	int ret;
-	osd_text_info_t text_tm;
-	time_t now;
-	struct tm tm = {0};
-	static struct timeval tv_prev;
-	static struct timeval tv;
-	int elapse = 0;
-	int flag = 0;
-	int i;
-	if( (frame - last_frame) > OSD_FRAME_INTERVAL ) {
-		gettimeofday(&tv, NULL);
-		elapse = (tv.tv_sec - tv_prev.tv_sec) * 1000
-				 + (tv.tv_usec - tv_prev.tv_usec) / 1000;
-		flag = abs(elapse) > 1.5 ? 1 : 0;
-		tv_prev.tv_sec = tv.tv_sec;
-		tv_prev.tv_usec = tv.tv_usec;
-		now = time(NULL);
-		localtime_r(&now, &tm);
-		sprintf(now_time, "%04d-%02d-%02d %02d:%02d:%02d", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
-				tm.tm_hour, tm.tm_min, tm.tm_sec);
-		text_tm.text = now_time;
-		text_tm.cnt = strlen(now_time);
-		if (osd_run.rotate) {
-			text_tm.x = osd_run.offset_x;
-			text_tm.y = osd_run.offset_y;
-		} else {
-			text_tm.x = osd_run.offset_x;
-			text_tm.y = osd_run.offset_y;
-		}
-/*		if (tm.tm_sec && !flag)
-			goto next;
-		if (tm.tm_min && !flag)
-			goto next;
-		if (tm.tm_hour && !flag)
-			goto next;
-		sprintf(now_date, "%04d:%02d:%02d", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday);
-		text_date.text = now_date;
-		if (osd_run.rotate) {
-			text_date.x = 200;
-			text_date.y = 0;
-		} else {
-			text_date.x = 0;
-			text_date.y = 0;
-		}
-		text_date.cnt = strlen(now_date);
-		ret = osd_set_osd2_timedate(&text_date, 1);
-		if (ret < 0) {
-			log_qcy(DEBUG_SERIOUS, "%s, set osd2 attr fail\n", __func__);
-			video_osd_release();
-			return -1;
-		}
-next:
-*/
-		ret = osd_set_osd_timedate(&text_tm, 0);
-		if (ret < 0) {
-			log_qcy(DEBUG_SERIOUS, "%s, set osd2 attr fail\n", __func__);
-			video_osd_release();
-			return -1;
-		}
-		last_frame = frame;
+	if( osd_run.ipattern ) {
+		free( osd_run.ipattern);
+		osd_run.ipattern = NULL;
 	}
-	else {
-		usleep(1000);
+	if( osd_run.image2222 ) {
+		free( osd_run.image2222);
+		osd_run.image2222 = NULL;
 	}
-	return ret;
+	if( osd_run.image8888 ) {
+		free( osd_run.image8888);
+		osd_run.image8888 = NULL;
+	}
 }
 
-int video_osd_init(video_osd_config_t *ctrl, int stream, int width, int height)
+static int video_osd_reinit(int width, int height)
 {
-	int ret=0;
-	char face_path[32];
-	time_t now;
-	struct tm tm = {0};
-	int i;
-	now = time(NULL);
-	localtime_r(&now, &tm);
-    last_frame = 0;
-	osd_run.stream = stream;
-	osd_run.rotate = ctrl->time_rotate;
-	osd_run.alpha = ctrl->time_alpha;
+	int i=0;
 	osd_run.width = width;
 	osd_run.height = height;
-	osd_run.color = ctrl->time_color;
 	if( width >= 1920 ) {
-		osd_run.pixel_size = 40;
+		osd_run.pixel_size = 48;
 		osd_run.offset_x = 12;
 		osd_run.offset_y = 10;
 	}
 	else if( width >= 1280 ) {
-		osd_run.pixel_size = 32;
+		osd_run.pixel_size = 34;
 		osd_run.offset_x = 8;
 		osd_run.offset_y = 6;
 	}
@@ -516,13 +445,8 @@ int video_osd_init(video_osd_config_t *ctrl, int stream, int width, int height)
 		osd_run.offset_y = 2;
 		osd_run.pixel_size = 16;
 	}
-	if( tm.tm_hour >= 18 ) osd_run.color = 0xFF;
-	else osd_run.color = 0x00;
-	//init freetype
-	FT_Init_FreeType(&osd_run.library);
-	snprintf(face_path, 32, "%sfont/%s%s", _config_.qcy_path, ctrl->time_font_face, ".ttf");
-	FT_New_Face(osd_run.library, face_path, 0, &osd_run.face);
 	FT_Set_Pixel_Sizes(osd_run.face, osd_run.pixel_size, 0);
+	video_osd_release_1();
 	osd_run.ipattern = (unsigned char *)calloc( osd_run.pixel_size * osd_run.pixel_size / 2, sizeof(patt) );
 	if (!osd_run.ipattern) {
 		log_qcy(DEBUG_SERIOUS, "%s calloc fail\n", __func__);
@@ -544,6 +468,109 @@ int video_osd_init(video_osd_config_t *ctrl, int stream, int width, int height)
 	for (i = 0; i < sizeof(patt); i++) {
 		osd_load_char( (unsigned short)patt[i], osd_run.ipattern + osd_run.pixel_size * osd_run.pixel_size / 2 * i);
 	}
+}
+/*
+ * interface
+ */
+int video_osd_proc(video_osd_config_t *ctrl, int width, int height)
+{
+	char now_time[9] = "00:00:00";
+	char now_date[11] = "2017:01:01";
+	int ret;
+	osd_text_info_t text_tm;
+	time_t now;
+	struct tm tm = {0};
+	static struct timeval tv_prev;
+	static struct timeval tv;
+	int elapse = 0;
+	int flag = 0;
+	int i;
+	if( (width != osd_run.width) || (height != osd_run.height) ) {
+//		video_osd_reinit( width, height );
+	}
+	//**color
+	now = time(NULL);
+	localtime_r(&now, &tm);
+	if( (tm.tm_hour >= 19) || (tm.tm_hour <= 7) )
+		osd_run.color = 0xFF;
+	else
+		osd_run.color = 0x00;
+	//***
+	gettimeofday(&tv, NULL);
+	elapse = (tv.tv_sec - tv_prev.tv_sec) * 1000
+			 + (tv.tv_usec - tv_prev.tv_usec) / 1000;
+	flag = abs(elapse) > 1.5 ? 1 : 0;
+	tv_prev.tv_sec = tv.tv_sec;
+	tv_prev.tv_usec = tv.tv_usec;
+	sprintf(now_time, "%04d-%02d-%02d %02d:%02d:%02d", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
+			tm.tm_hour, tm.tm_min, tm.tm_sec);
+	text_tm.text = now_time;
+	text_tm.cnt = strlen(now_time);
+	if (osd_run.rotate) {
+		text_tm.x = osd_run.offset_x;
+		text_tm.y = osd_run.offset_y;
+	} else {
+		text_tm.x = osd_run.offset_x;
+		text_tm.y = osd_run.offset_y;
+	}
+/*		if (tm.tm_sec && !flag)
+		goto next;
+	if (tm.tm_min && !flag)
+		goto next;
+	if (tm.tm_hour && !flag)
+		goto next;
+	sprintf(now_date, "%04d:%02d:%02d", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday);
+	text_date.text = now_date;
+	if (osd_run.rotate) {
+		text_date.x = 200;
+		text_date.y = 0;
+	} else {
+		text_date.x = 0;
+		text_date.y = 0;
+	}
+	text_date.cnt = strlen(now_date);
+	ret = osd_set_osd2_timedate(&text_date, 1);
+	if (ret < 0) {
+		log_qcy(DEBUG_SERIOUS, "%s, set osd2 attr fail\n", __func__);
+		video_osd_release();
+		return -1;
+	}
+next:
+*/
+	ret = osd_set_osd_timedate(&text_tm, 0);
+	if (ret < 0) {
+		log_qcy(DEBUG_SERIOUS, "%s, set osd2 attr fail\n", __func__);
+		video_osd_release();
+		return -1;
+	}
+	return ret;
+}
+
+int video_osd_init(video_osd_config_t *ctrl, int stream, int width, int height)
+{
+	int ret=0;
+	char face_path[32];
+	int i;
+	time_t now;
+	struct tm tm = {0};
+	//***
+	osd_run.stream = stream;
+	osd_run.rotate = ctrl->time_rotate;
+	osd_run.alpha = ctrl->time_alpha;
+	osd_run.color = ctrl->time_color;
+	//**color
+	now = time(NULL);
+	localtime_r(&now, &tm);
+	if( (tm.tm_hour >= 19) || (tm.tm_hour <= 7) )
+		osd_run.color = 0xFF;
+	else
+		osd_run.color = 0x00;
+	//init freetype
+	FT_Init_FreeType(&osd_run.library);
+	snprintf(face_path, 32, "%sfont/%s%s", _config_.qcy_path, ctrl->time_font_face, ".ttf");
+	FT_New_Face(osd_run.library, face_path, 0, &osd_run.face);
+	//***
+	video_osd_reinit(width, height);
 	ret = rts_av_query_osd2(osd_run.stream, &osd_run.osd_attr);
 	if (ret < 0) {
 		log_qcy(DEBUG_SERIOUS, "%s, query osd2 attr fail\n", __func__);
@@ -585,7 +612,6 @@ int video_osd_release(void)
 	FT_Done_Face(osd_run.face);
    	FT_Done_FreeType(osd_run.library);
     RTS_SAFE_RELEASE(osd_run.osd_attr, rts_av_release_osd2);
-    last_frame = 0;
 	return ret;
 }
 

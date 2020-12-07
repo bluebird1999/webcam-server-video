@@ -71,7 +71,7 @@ int video_isp_set_attr(unsigned int id, int value)
 	int ret;
 	ret = rts_av_get_isp_ctrl(id, &ctrl);
 	if (ret) {
-		log_qcy(DEBUG_SERIOUS, "get isp attr fail, ret = %d\n", ret);
+		log_qcy(DEBUG_SERIOUS, "get isp attr fail, id=%d ret = %d\n", id, ret);
 		return ret;
 	}
 	value = isp_get_valid_value(id, value, &ctrl);
@@ -82,12 +82,12 @@ int video_isp_set_attr(unsigned int id, int value)
 	ctrl.current_value = value;
 	ret = rts_av_set_isp_ctrl(id, &ctrl);
 	if (ret) {
-		log_qcy(DEBUG_SERIOUS, "set isp attr fail, ret = %d\n", ret);
+		log_qcy(DEBUG_SERIOUS, "set isp attr fail, id=%d ret = %d\n", id, ret);
 		return ret;
 	}
 	ret = rts_av_get_isp_ctrl(id, &ctrl);
 	if (ret) {
-		log_qcy(DEBUG_SERIOUS, "get isp attr fail, ret = %d\n", ret);
+		log_qcy(DEBUG_SERIOUS, "get isp attr fail, id=%d ret = %d\n", id, 	ret);
 		return ret;
 	}
 /*

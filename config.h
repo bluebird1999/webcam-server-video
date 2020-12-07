@@ -20,15 +20,13 @@
 /*
  * define
  */
-#define		CONFIG_VIDEO_MODULE_NUM			7
+#define		CONFIG_VIDEO_MODULE_NUM			5
 
 #define		CONFIG_VIDEO_PROFILE			0
 #define		CONFIG_VIDEO_ISP				1
 #define		CONFIG_VIDEO_H264				2
 #define		CONFIG_VIDEO_OSD				3
 #define		CONFIG_VIDEO_3ACTRL				4
-#define		CONFIG_VIDEO_JPG				5
-#define		CONFIG_VIDEO_MD					6
 
 #define		AE_AUTO_MODE_NONE				0
 #define		AE_AUTO_MODE_TARGET_DELTA		1
@@ -44,8 +42,7 @@
 #define 	CONFIG_VIDEO_H264_PATH			"config/video_h264.config"
 #define 	CONFIG_VIDEO_OSD_PATH			"config/video_osd.config"
 #define 	CONFIG_VIDEO_3ACTRL_PATH		"config/video_3actrl.config"
-#define 	CONFIG_VIDEO_JPG_PATH			"config/video_jpg.config"
-#define 	CONFIG_VIDEO_MD_PATH			"config/video_md.config"
+
 
 /*
  * structure
@@ -154,24 +151,6 @@ typedef struct video_3actrl_config_t {
 	isp_ae_para_t	ae_para;
 } video_3actrl_config_t;
 
-typedef struct video_jpg_config_t {
-	int		enable;
-	char	image_path[MAX_SYSTEM_STRING_SIZE];
-	struct rts_jpgenc_attr		jpg_ctrl;
-} video_jpg_config_t;
-
-typedef struct video_md_config_t {
-	int 	enable;
-	int		polling;
-	int		trig;
-	int		cloud_report;
-	int		alarm_interval;
-	int		sensitivity;
-	int		recording_length;
-	char	start[MAX_SYSTEM_STRING_SIZE];
-	char	end[MAX_SYSTEM_STRING_SIZE];
-} video_md_config_t;
-
 typedef struct video_config_t {
 	int							status;
 	video_profile_config_t		profile;
@@ -179,8 +158,6 @@ typedef struct video_config_t {
 	video_h264_config_t			h264;
 	video_osd_config_t 			osd;
 	video_3actrl_config_t		a3ctrl;
-	video_jpg_config_t			jpg;
-	video_md_config_t			md;
 } video_config_t;
 
 /*
@@ -188,6 +165,5 @@ typedef struct video_config_t {
  */
 int video_config_video_read(video_config_t *vconf);
 int video_config_video_set(int module, void *t);
-int video_config_video_get_config_status(int module);
 
 #endif /* SERVER_VIDEO_CONFIG_H_ */
