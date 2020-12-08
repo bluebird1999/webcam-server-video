@@ -358,10 +358,11 @@ static int *video_osd_func(void *arg)
     	if( info.exit ) break;
     	if( misc_get_bit(info.thread_exit, THREAD_OSD) ) break;
     	st = info.status;
-    	if( st == STATUS_RUN )
-        	video_osd_proc(&ctrl,config.profile.profile[config.profile.quality].video.width,
+    	if( st == STATUS_RUN ) {
+        	ret = video_osd_proc(&ctrl,config.profile.profile[config.profile.quality].video.width,
             		config.profile.profile[config.profile.quality].video.height);
-    	usleep(1000*500);
+    	}
+    	usleep(1000*10);
     }
     //release
 exit:

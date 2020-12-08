@@ -250,7 +250,7 @@ static int osd_set_osd_timedate(osd_text_info_t *text, int blkidx)
 	block->enable = 1;
 	ret = rts_av_set_osd2_single(osd_run.osd_attr, blkidx);
 	if (ret < 0)
-		log_qcy(DEBUG_SERIOUS, "set osd2 fail, ret = %d\n", ret);
+		log_qcy(DEBUG_INFO, "set osd2 fail, ret = %d\n", ret);
 	return ret;
 }
 
@@ -375,7 +375,7 @@ static int osd_set_osd_text(void)
 	block->enable = 1;
 	ret = rts_av_set_osd2_single(osd_run.osd_attr, 3);
 	if (ret < 0) {
-		log_qcy(DEBUG_SERIOUS, "set osd2 fail, ret = %d\n", ret);
+		log_qcy(DEBUG_INFO, "set osd2 fail, ret = %d\n", ret);
 	}
 	free(p);
 	free(pbuf);
@@ -418,11 +418,13 @@ static int video_osd_release_1(void)
 		free( osd_run.image8888);
 		osd_run.image8888 = NULL;
 	}
+    RTS_SAFE_RELEASE(osd_run.osd_attr, rts_av_release_osd2);
 }
 
 static int video_osd_reinit(int width, int height)
 {
-	int i=0;
+	int i=0, ret;
+	video_osd_release_1();
 	osd_run.width = width;
 	osd_run.height = height;
 	if( width >= 1920 ) {
@@ -431,7 +433,7 @@ static int video_osd_reinit(int width, int height)
 		osd_run.offset_y = 10;
 	}
 	else if( width >= 1280 ) {
-		osd_run.pixel_size = 34;
+		osd_run.pixel_size = 32;
 		osd_run.offset_x = 8;
 		osd_run.offset_y = 6;
 	}
@@ -441,32 +443,38 @@ static int video_osd_reinit(int width, int height)
 		osd_run.offset_y = 4;
 	}
 	else {
-		osd_run.offset_x = 4;
-		osd_run.offset_y = 2;
 		osd_run.pixel_size = 16;
+		osd_run.offset_x = 4;
+		osd_run.offset_y = 4;
 	}
 	FT_Set_Pixel_Sizes(osd_run.face, osd_run.pixel_size, 0);
-	video_osd_release_1();
 	osd_run.ipattern = (unsigned char *)calloc( osd_run.pixel_size * osd_run.pixel_size / 2, sizeof(patt) );
 	if (!osd_run.ipattern) {
-		log_qcy(DEBUG_SERIOUS, "%s calloc fail\n", __func__);
+		log_qcy(DEBUG_WARNING, "%s calloc fail\n", __func__);
 		video_osd_release();
 		return -1;
 	}
 	osd_run.image2222 = (unsigned char *)calloc( 20 * osd_run.pixel_size * osd_run.pixel_size / 2, 1 );
 	if (!osd_run.image2222) {
-		log_qcy(DEBUG_SERIOUS, "%s calloc fail\n", __func__);
+		log_qcy(DEBUG_WARNING, "%s calloc fail\n", __func__);
 		video_osd_release();
 		return -1;
 	}
 	osd_run.image8888 = (unsigned char *)calloc( 20 * 4 * osd_run.pixel_size * osd_run.pixel_size / 2, 1);
 	if (!osd_run.image8888) {
-		log_qcy(DEBUG_SERIOUS, "%s calloc fail\n", __func__);
+		log_qcy(DEBUG_WARNING, "%s calloc fail\n", __func__);
 		video_osd_release();
 		return -1;
 	}
 	for (i = 0; i < sizeof(patt); i++) {
 		osd_load_char( (unsigned short)patt[i], osd_run.ipattern + osd_run.pixel_size * osd_run.pixel_size / 2 * i);
+	}
+    RTS_SAFE_RELEASE(osd_run.osd_attr, rts_av_release_osd2);
+	ret = rts_av_query_osd2(osd_run.stream, &osd_run.osd_attr);
+	if (ret < 0) {
+		log_qcy(DEBUG_SERIOUS, "%s, query osd2 attr fail\n", __func__);
+		video_osd_release();
+		return -1;
 	}
 }
 /*
@@ -486,7 +494,7 @@ int video_osd_proc(video_osd_config_t *ctrl, int width, int height)
 	int flag = 0;
 	int i;
 	if( (width != osd_run.width) || (height != osd_run.height) ) {
-//		video_osd_reinit( width, height );
+		video_osd_reinit( width, height );
 	}
 	//**color
 	now = time(NULL);
@@ -539,8 +547,8 @@ next:
 */
 	ret = osd_set_osd_timedate(&text_tm, 0);
 	if (ret < 0) {
-		log_qcy(DEBUG_SERIOUS, "%s, set osd2 attr fail\n", __func__);
-		video_osd_release();
+		log_qcy(DEBUG_INFO, "%s, set osd2 attr fail\n", __func__);
+//		video_osd_release();
 		return -1;
 	}
 	return ret;
@@ -571,12 +579,6 @@ int video_osd_init(video_osd_config_t *ctrl, int stream, int width, int height)
 	FT_New_Face(osd_run.library, face_path, 0, &osd_run.face);
 	//***
 	video_osd_reinit(width, height);
-	ret = rts_av_query_osd2(osd_run.stream, &osd_run.osd_attr);
-	if (ret < 0) {
-		log_qcy(DEBUG_SERIOUS, "%s, query osd2 attr fail\n", __func__);
-		video_osd_release();
-		return -1;
-	}
 /*	ret = osd_set_osd2_color_table();
 	if (ret < 0) {
 		log_qcy(DEBUG_SERIOUS, "%s, osd2 setup color table fail\n", __func__);
@@ -596,23 +598,11 @@ int video_osd_init(video_osd_config_t *ctrl, int stream, int width, int height)
 
 int video_osd_release(void)
 {
-	int ret=0;
-	if( osd_run.ipattern ) {
-		free( osd_run.ipattern);
-		osd_run.ipattern = NULL;
-	}
-	if( osd_run.image2222 ) {
-		free( osd_run.image2222);
-		osd_run.image2222 = NULL;
-	}
-	if( osd_run.image8888 ) {
-		free( osd_run.image8888);
-		osd_run.image8888 = NULL;
-	}
-	FT_Done_Face(osd_run.face);
-   	FT_Done_FreeType(osd_run.library);
-    RTS_SAFE_RELEASE(osd_run.osd_attr, rts_av_release_osd2);
-	return ret;
+	int ret;
+	video_osd_release_1();
+	ret = FT_Done_Face(osd_run.face);
+   	ret = FT_Done_FreeType(osd_run.library);
+    return ret;
 }
 
 
