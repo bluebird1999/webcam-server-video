@@ -49,6 +49,7 @@ static  pthread_rwlock_t	ilock = PTHREAD_MUTEX_INITIALIZER;
 static	pthread_rwlock_t	vlock = PTHREAD_RWLOCK_INITIALIZER;
 static	pthread_mutex_t		mutex = PTHREAD_MUTEX_INITIALIZER;
 static	pthread_cond_t		cond = PTHREAD_COND_INITIALIZER;
+static 	miss_session_t		*session[MAX_SESSION_NUMBER];
 
 //function
 //common
@@ -412,6 +413,10 @@ static int *video_main_func(void* arg)
     			continue;
     		}
     		memcpy(packet->data, buffer->vm_addr, buffer->bytesused);
+    		if( (stream.realtek_stamp == 0) && (stream.unix_stamp == 0) ) {
+    			stream.realtek_stamp = buffer->timestamp;
+    			stream.unix_stamp = time_get_now_stamp();
+    		}
     		write_video_info( buffer, &packet->info);
     		rts_av_put_buffer(buffer);
     		for(i=0;i<MAX_SESSION_NUMBER;i++) {
@@ -562,6 +567,9 @@ static int stream_stop(void)
 		ret = rts_av_disable_chn(stream.h264);
 	if(stream.isp!=-1)
 		ret = rts_av_disable_chn(stream.isp);
+	stream.frame = 0;
+	stream.realtek_stamp = 0;
+	stream.unix_stamp = 0;
 	return ret;
 }
 
@@ -630,7 +638,8 @@ static void write_video_info(struct rts_av_buffer *data, av_data_info_t	*info)
 {
 	info->flag = data->flags;
 	info->frame_index = data->frame_idx;
-	info->timestamp = data->timestamp / 1000;
+//	info->timestamp = data->timestamp / 1000;
+	info->timestamp = ( ( data->timestamp - stream.realtek_stamp ) / 1000) + stream.unix_stamp * 1000;
 	info->fps = config.profile.profile[config.profile.quality].video.denominator;
 	info->width = config.profile.profile[config.profile.quality].video.width;
 	info->height = config.profile.profile[config.profile.quality].video.height;
@@ -660,6 +669,7 @@ static int write_video_buffer(av_packet_t *data, int id, int target, int channel
 	msg_init(&msg);
 	msg.sender = msg.receiver = SERVER_VIDEO;
 	msg.arg_in.wolf = channel;
+	msg.arg_in.handler = session[channel];
 	msg.message = id;
 	msg.arg = data;
 	msg.arg_size = 0;
@@ -671,6 +681,18 @@ static int write_video_buffer(av_packet_t *data, int id, int target, int channel
 		ret = server_recorder_video_message(&msg);
 	/****************************/
 	return ret;
+}
+
+static int video_add_session(miss_session_t *ses, int sid)
+{
+	session[sid] = ses;
+	return 0;
+}
+
+static int video_remove_session(miss_session_t *ses, int sid)
+{
+	session[sid] = NULL;
+	return 0;
 }
 
 static int server_set_status(int type, int st, int value)
@@ -765,18 +787,11 @@ static int server_message_proc(void)
 	msg_deep_copy(&info.task.msg, &msg);
 	switch(msg.message) {
 		case MSG_VIDEO_START:
-			if( msg.sender == SERVER_MISS ) misc_set_bit(&info.status2, (RUN_MODE_MISS + msg.arg_in.wolf), 1);
-			if( msg.sender == SERVER_MICLOUD) misc_set_bit(&info.status2, RUN_MODE_MICLOUD, 1);
-			if( msg.sender == SERVER_RECORDER) misc_set_bit(&info.status2, (RUN_MODE_SAVE + msg.arg_in.wolf), 1);
 			info.task.func = task_start;
 			info.task.start = info.status;
 			info.msg_lock = 1;
 			break;
 		case MSG_VIDEO_STOP:
-			if( msg.sender == SERVER_MISS) misc_set_bit(&info.status2, (RUN_MODE_MISS + msg.arg_in.wolf), 0);
-			if( msg.sender == SERVER_MICLOUD) misc_set_bit(&info.status2, RUN_MODE_MICLOUD, 0);
-			if( msg.sender == SERVER_RECORDER) misc_set_bit(&info.status2, (RUN_MODE_SAVE + msg.arg_in.wolf), 0);
-			if( msg.sender == SERVER_VIDEO) misc_set_bit(&info.status2, RUN_MODE_MOTION, 0);
 			info.task.func = task_stop;
 			info.task.start = info.status;
 			info.msg_lock = 1;
@@ -1117,6 +1132,14 @@ static void task_start(void)
 	}
 	return;
 exit:
+	if( msg.result == 0 ) {
+		if( info.task.msg.sender == SERVER_MISS ) {
+			video_add_session(info.task.msg.arg_in.handler, info.task.msg.arg_in.wolf);
+		}
+		if( info.task.msg.sender == SERVER_MISS ) misc_set_bit(&info.status2, (RUN_MODE_MISS + info.task.msg.arg_in.wolf), 1);
+		if( info.task.msg.sender == SERVER_MICLOUD) misc_set_bit(&info.status2, RUN_MODE_MICLOUD, 1);
+		if( info.task.msg.sender == SERVER_RECORDER) misc_set_bit(&info.status2, (RUN_MODE_SAVE + info.task.msg.arg_in.wolf), 1);
+	}
 	manager_common_send_message(info.task.msg.receiver, &msg);
 	msg_free(&info.task.msg);
 	info.task.func = &task_default;
@@ -1162,6 +1185,15 @@ static void task_stop(void)
 	}
 	return;
 exit:
+	if( msg.result==0 ) {
+		if( info.task.msg.sender == SERVER_MISS ) {
+			video_remove_session(info.task.msg.arg_in.handler, info.task.msg.arg_in.wolf);
+		}
+		if( info.task.msg.sender == SERVER_MISS) misc_set_bit(&info.status2, (RUN_MODE_MISS + info.task.msg.arg_in.wolf), 0);
+		if( info.task.msg.sender == SERVER_MICLOUD) misc_set_bit(&info.status2, RUN_MODE_MICLOUD, 0);
+		if( info.task.msg.sender == SERVER_RECORDER) misc_set_bit(&info.status2, (RUN_MODE_SAVE + info.task.msg.arg_in.wolf), 0);
+		if( info.task.msg.sender == SERVER_VIDEO) misc_set_bit(&info.status2, RUN_MODE_MOTION, 0);
+	}
 	manager_common_send_message(info.task.msg.receiver, &msg);
 	msg_free(&info.task.msg);
 	info.task.func = &task_default;
