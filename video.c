@@ -792,6 +792,11 @@ static int server_message_proc(void)
 			info.msg_lock = 1;
 			break;
 		case MSG_VIDEO_STOP:
+			info.task.msg.arg_in.cat = info.status2;
+			if( msg.sender == SERVER_MISS) misc_set_bit(&info.task.msg.arg_in.cat, (RUN_MODE_MISS + msg.arg_in.wolf), 0);
+			if( msg.sender == SERVER_MICLOUD) misc_set_bit(&info.task.msg.arg_in.cat, RUN_MODE_MICLOUD, 0);
+			if( msg.sender == SERVER_RECORDER) misc_set_bit(&info.task.msg.arg_in.cat, (RUN_MODE_SAVE + msg.arg_in.wolf), 0);
+			if( msg.sender == SERVER_VIDEO) misc_set_bit(&info.task.msg.arg_in.cat, RUN_MODE_MOTION, 0);
 			info.task.func = task_stop;
 			info.task.start = info.status;
 			info.msg_lock = 1;
@@ -1168,7 +1173,7 @@ static void task_stop(void)
 			break;
 		case STATUS_START:
 		case STATUS_RUN:
-			if( info.status2 > 0 ) {
+			if( info.task.msg.arg_in.cat > 0 ) {
 				goto exit;
 				break;
 			}
