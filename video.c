@@ -335,7 +335,6 @@ static int *video_osd_func(void *arg)
 {
 	int ret=0, st;
 	video_osd_config_t ctrl;
-	static int iter = 0;
     signal(SIGINT, server_thread_termination);
     signal(SIGTERM, server_thread_termination);
     misc_set_thread_name("server_video_osd");
@@ -350,7 +349,6 @@ static int *video_osd_func(void *arg)
     }
     server_set_status(STATUS_TYPE_THREAD_START, THREAD_OSD, 1 );
     manager_common_send_dummy(SERVER_VIDEO);
-    iter = 0;
     while( 1 ) {
     	if( info.exit ) break;
     	if( misc_get_bit(info.thread_exit, THREAD_OSD) ) break;
@@ -359,12 +357,8 @@ static int *video_osd_func(void *arg)
     		break;
     	else if( st == STATUS_START )
     		continue;
-    	if( iter > 50) {
-    		ret = video_osd_proc(&ctrl);
-    		iter = 0;
-    	}
-    	usleep(1000*10);
-    	iter++;
+   		ret = video_osd_proc(&ctrl);
+    	usleep(1000*100);
     }
     //release
 exit:
@@ -1029,7 +1023,7 @@ static void task_control_ext(void)
 			if( !para_set )
 				info.status = STATUS_RESTART;
 			else {
-				if( info.thread_start == info.tick )
+				if( misc_get_bit( info.thread_start, THREAD_VIDEO ) )
 					goto exit;
 			}
 			break;
@@ -1117,7 +1111,7 @@ static void task_control(void)
 				info.status = STATUS_STOP;
 			}
 			else {
-				if( info.thread_start == info.tick )
+				if( misc_get_bit( info.thread_start, THREAD_VIDEO ) )
 					goto exit;
 			}
 			break;
@@ -1170,7 +1164,7 @@ static void task_start(void)
 			server_start();
 			break;
 		case STATUS_RUN:
-			if( info.thread_start == info.tick )
+			if( misc_get_bit( info.thread_start, THREAD_VIDEO ) )
 				goto exit;
 			break;
 		case STATUS_ERROR:
