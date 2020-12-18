@@ -183,6 +183,101 @@ static int video_config_save(void);
 /*
  * interface
  */
+static int video_config_init_auto_profile(void)
+{
+	int id;
+	// ~1
+	id = 1;
+//	video_config.profile.profile[id].fmt = 3;
+//	video_config.profile.profile[id].video.width = 640;
+//	video_config.profile.profile[id].video.height = 480;
+//	video_config.profile.profile[id].video.numerator = 1;
+//	video_config.profile.profile[id].video.denominator = 15;
+	video_config.h264.h264_gop[id] = 20;
+	video_config.h264.h264_bitrate[id] = 250*1024;
+	video_config.h264.h264_level[id] = 12;
+	video_config.h264.h264_qp[id] = -1;
+	// ~2
+	id = 2;
+//	video_config.profile.profile[id].fmt = 3;
+//	video_config.profile.profile[id].video.width = 1920;
+//	video_config.profile.profile[id].video.height = 1080;
+//	video_config.profile.profile[id].video.numerator = 1;
+//	video_config.profile.profile[id].video.denominator = 15;
+	video_config.h264.h264_gop[id] = 30;
+	video_config.h264.h264_bitrate[id] = 1250*1024;
+	video_config.h264.h264_level[id] = 12;
+	video_config.h264.h264_qp[id] = -1;
+	//*************************************************************
+	//start of auto mode configuration
+	// ~ 3
+	id = 3;
+	video_config.profile.profile[id].fmt = 3;
+	video_config.profile.profile[id].video.width = 640;
+	video_config.profile.profile[id].video.height = 360;
+	video_config.profile.profile[id].video.numerator = 1;
+	video_config.profile.profile[id].video.denominator = 10;
+	video_config.h264.h264_gop[id] = 20;
+	video_config.h264.h264_bitrate[id] = 250*1024;
+	video_config.h264.h264_level[id] = 12;
+	video_config.h264.h264_qp[id] = -1;
+	// ~4
+	id = 4;
+	video_config.profile.profile[id].fmt = 3;
+	video_config.profile.profile[id].video.width = 640;
+	video_config.profile.profile[id].video.height = 360;
+	video_config.profile.profile[id].video.numerator = 1;
+	video_config.profile.profile[id].video.denominator = 15;
+	video_config.h264.h264_gop[id] = 30;
+	video_config.h264.h264_bitrate[id] = 500*1024;
+	video_config.h264.h264_level[id] = 12;
+	video_config.h264.h264_qp[id] = -1;
+	// ~5
+	id = 5;
+	video_config.profile.profile[id].fmt = 3;
+	video_config.profile.profile[id].video.width = 1280;
+	video_config.profile.profile[id].video.height = 720;
+	video_config.profile.profile[id].video.numerator = 1;
+	video_config.profile.profile[id].video.denominator = 10;
+	video_config.h264.h264_gop[id] = 20;
+	video_config.h264.h264_bitrate[id] = 750*1024;
+	video_config.h264.h264_level[id] = 12;
+	video_config.h264.h264_qp[id] = -1;
+	// ~6
+	id = 6;
+	video_config.profile.profile[id].fmt = 3;
+	video_config.profile.profile[id].video.width = 1280;
+	video_config.profile.profile[id].video.height = 720;
+	video_config.profile.profile[id].video.numerator = 1;
+	video_config.profile.profile[id].video.denominator = 15;
+	video_config.h264.h264_gop[id] = 30;
+	video_config.h264.h264_bitrate[id] = 1000*1024;
+	video_config.h264.h264_level[id] = 12;
+	video_config.h264.h264_qp[id] = -1;
+	// ~7
+	id = 7;
+	video_config.profile.profile[id].fmt = 3;
+	video_config.profile.profile[id].video.width = 1920;
+	video_config.profile.profile[id].video.height = 1080;
+	video_config.profile.profile[id].video.numerator = 1;
+	video_config.profile.profile[id].video.denominator = 10;
+	video_config.h264.h264_gop[id] = 20;
+	video_config.h264.h264_bitrate[id] = 1250*1024;
+	video_config.h264.h264_level[id] = 12;
+	video_config.h264.h264_qp[id] = -1;
+	// ~8
+	id = 8;
+	video_config.profile.profile[id].fmt = 3;
+	video_config.profile.profile[id].video.width = 1920;
+	video_config.profile.profile[id].video.height = 1080;
+	video_config.profile.profile[id].video.numerator = 1;
+	video_config.profile.profile[id].video.denominator = 15;
+	video_config.h264.h264_gop[id] = 30;
+	video_config.h264.h264_bitrate[id] = 1250*1024;
+	video_config.h264.h264_level[id] = 12;
+	video_config.h264.h264_qp[id] = -1;
+}
+
 static int video_config_save(void)
 {
 	int ret = 0;
@@ -246,6 +341,7 @@ int video_config_video_read(video_config_t *vconf)
 	else
 		misc_set_bit(&video_config.status, CONFIG_VIDEO_PROFILE,0);
 	ret1 |= ret;
+	video_config_init_auto_profile();
 	memset(fname,0,sizeof(fname));
 	sprintf(fname,"%s%s",_config_.qcy_path, CONFIG_VIDEO_ISP_PATH);
 	ret = read_config_file(&video_config_isp_map,fname );

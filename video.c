@@ -213,6 +213,10 @@ static int video_set_property(message_t *msg)
 	return ret;
 }
 
+static int video_process_miss_buffer_msg(message_t *msg)
+{
+}
+
 static int video_qos_check(av_qos_t *qos)
 {
 	double ratio = 0.0;
@@ -240,13 +244,13 @@ static int video_quality_downgrade(av_qos_t *qos)
 	message_t msg;
 	int ret = 0;
 	int vq = -1;
-	if( config.profile.quality >= 1 )
+	if( config.profile.quality > AUTO_PROFILE_START )
 		vq = config.profile.quality - 1;
 	else
 		return 0;
     /********message body********/
 	msg_init(&msg);
-	msg.message = MSG_VIDEO_PROPERTY_SET;
+	msg.message = MSG_VIDEO_PROPERTY_SET_EXT;
 	msg.sender = msg.receiver = SERVER_VIDEO;
 	msg.arg_in.cat = VIDEO_PROPERTY_QUALITY;
 	msg.arg = &vq;
@@ -263,13 +267,13 @@ static int video_quality_upgrade(av_qos_t *qos)
 	message_t msg;
 	int ret = 0;
 	int vq = -1;
-	if( config.profile.quality <= 1 )
+	if( config.profile.quality < (AUTO_PROFILE_START + AUTO_PROFILE_NUM - 1) )
 		vq = config.profile.quality + 1;
 	else
 		return 0;
     /********message body********/
 	msg_init(&msg);
-	msg.message = MSG_VIDEO_PROPERTY_SET;
+	msg.message = MSG_VIDEO_PROPERTY_SET_EXT;
 	msg.sender = msg.receiver = SERVER_VIDEO;
 	msg.arg_in.cat = VIDEO_PROPERTY_QUALITY;
 	msg.arg = &vq;
@@ -402,6 +406,11 @@ static int *video_main_func(void* arg)
     		continue;
     	if ( buffer ) {
         	packet = av_buffer_get_empty(&vbuffer, &qos.buffer_overrun, &qos.buffer_success);
+        	if( buffer->bytesused > 100*1024 ) {
+    			log_qcy(DEBUG_WARNING, "realtek video frame size=%d!!!!!!", buffer->bytesused);
+    			rts_av_put_buffer(buffer);
+    			continue;
+        	}
     		packet->data = malloc( buffer->bytesused );
     		if( packet->data == NULL) {
     			log_qcy(DEBUG_WARNING, "allocate memory failed in video buffer, size=%d", buffer->bytesused);
@@ -437,11 +446,12 @@ static int *video_main_func(void* arg)
 					}
 				}
     		}
-/*
-    		if( video_qos_check(&qos) == REALTEK_QOS_UPGRADE )
-    			video_quality_upgrade(&qos);
-    		else if( video_qos_check(&qos) == REALTEK_QOS_DOWNGRADE )
-    			video_quality_downgrade(&qos);
+/*    		if( config.profile.quality >= AUTO_PROFILE_START ) { //auto mode
+				if( video_qos_check(&qos) == REALTEK_QOS_UPGRADE )
+					video_quality_upgrade(&qos);
+				else if( video_qos_check(&qos) == REALTEK_QOS_DOWNGRADE )
+					video_quality_downgrade(&qos);
+    		}
 */
     	}
     }
@@ -587,6 +597,18 @@ static int stream_stop(void)
 	return ret;
 }
 
+static void video_init_profile(void)
+{
+	int id;
+	if( config.profile.quality == 0 )
+		config.profile.quality = 3;		//middle range auto-quality
+	id = config.profile.quality;
+	config.h264.h264_attr.bps = config.h264.h264_bitrate[id];
+	config.h264.h264_attr.gop = config.h264.h264_gop[id];
+	config.h264.h264_attr.level = config.h264.h264_level[id];
+	config.h264.h264_attr.qp = config.h264.h264_qp[id];
+}
+
 static int video_init(void)
 {
 	int ret;
@@ -599,6 +621,8 @@ static int video_init(void)
 		return -1;
 	}
 	log_qcy(DEBUG_INFO, "isp chnno:%d", stream.isp);
+	video_init_profile();
+	config.h264.h264_attr.gop = 2 * config.profile.profile[config.profile.quality].video.denominator;
 	stream.h264 = rts_av_create_h264_chn(&config.h264.h264_attr);
 	if (stream.h264 < 0) {
 		log_qcy(DEBUG_SERIOUS, "fail to create h264 chn, ret = %d", stream.h264);
@@ -654,15 +678,16 @@ static void write_video_info(struct rts_av_buffer *data, av_data_info_t	*info)
    		info->flag |= FLAG_WATERMARK_TIMESTAMP_EXIST << 13;
    	else
    		info->flag |= FLAG_WATERMARK_TIMESTAMP_NOT_EXIST << 13;
+   	info->flag &= ~(0xF);
     if( misc_get_bit(data->flags, 0/*RTSTREAM_PKT_FLAG_KEY*/) )// I frame
     	info->flag |= FLAG_FRAME_TYPE_IFRAME << 0;
     else
     	info->flag |= FLAG_FRAME_TYPE_PBFRAME << 0;
-    if( config.profile.quality==0 )
+    if( (config.profile.quality==1) || (config.profile.quality==3) || (config.profile.quality==4) )
         info->flag |= FLAG_RESOLUTION_VIDEO_360P << 17;
-    else if( config.profile.quality==1 )
+    else if( (config.profile.quality==5) || (config.profile.quality==6))
         info->flag |= FLAG_RESOLUTION_VIDEO_480P << 17;
-    else if( config.profile.quality==2 )
+    else if( (config.profile.quality==2) || (config.profile.quality==7) || (config.profile.quality==8) )
         info->flag |= FLAG_RESOLUTION_VIDEO_1080P << 17;
     info->size = data->bytesused;
 }
@@ -854,6 +879,9 @@ static int server_message_proc(void)
 			break;
 		case MSG_MANAGER_DUMMY:
 			break;
+		case MSG_MISS_BUFFER_FULL:
+			video_process_miss_buffer_msg(&msg);
+			break;
 		default:
 			log_qcy(DEBUG_SERIOUS, "not processed message = %x", msg.message);
 			break;
@@ -1000,6 +1028,17 @@ static void task_control_ext(void)
 						msg.arg_size = sizeof(temp);
 					}
 				}
+				else if( info.task.msg.arg_in.cat == VIDEO_PROPERTY_QUALITY ) {
+					temp = *((int*)(info.task.msg.arg));
+					if( temp == 0 )
+						temp = 3;	//choose a middle range quality for auto mode
+					config.profile.quality = temp;
+					log_qcy(DEBUG_INFO, "changed the quality = %d", config.profile.quality);
+					video_config_video_set(CONFIG_VIDEO_PROFILE, &config.profile);
+					msg.arg_in.wolf = 1;
+					msg.arg = &temp;
+					msg.arg_size = sizeof(temp);
+				}
 				para_set = 1;
 				if( info.task.start == STATUS_WAIT )
 					goto exit;
@@ -1023,8 +1062,38 @@ static void task_control_ext(void)
 		case STATUS_START:
 			server_start();
 		case STATUS_RUN:
-			if( !para_set )
+			if( !para_set ) {
+				if( info.task.msg.arg_in.cat == VIDEO_PROPERTY_TIME_WATERMARK ) {
+					temp = *((int*)(info.task.msg.arg));
+					if( temp == config.osd.enable ) {
+						msg.arg_in.wolf = 0;
+						msg.arg = &temp;
+						msg.arg_size = sizeof(temp);
+						goto exit;
+					}
+				}
+				else if( info.task.msg.arg_in.cat == VIDEO_PROPERTY_IMAGE_ROLLOVER ) {
+					temp = *((int*)(info.task.msg.arg));
+					if( ( (temp==0) && ( (config.isp.flip==0) || (config.isp.mirror==0) ) ) ||
+							( (temp==180) && ( (config.isp.flip==1) || (config.isp.mirror==1) ) ) ) {
+						msg.arg_in.wolf = 0;
+						msg.arg = &temp;
+						msg.arg_size = sizeof(temp);
+						goto exit;
+					}
+				}
+				else if( info.task.msg.arg_in.cat == VIDEO_PROPERTY_QUALITY ) {
+					temp = *((int*)(info.task.msg.arg));
+					if( ( (temp == 0) && (config.profile.quality >= AUTO_PROFILE_START) ) ||
+						( temp == config.profile.quality) ) {	//not change if quality is the same
+						msg.arg_in.wolf = 0;
+						msg.arg = &temp;
+						msg.arg_size = sizeof(temp);
+						goto exit;
+					}
+				}
 				info.status = STATUS_RESTART;
+			}
 			else {
 				if( misc_get_bit( info.thread_start, THREAD_VIDEO ) )
 					goto exit;
@@ -1081,14 +1150,14 @@ static void task_control(void)
 			if( info.thread_start == 0) {
 				if( info.task.msg.arg_in.cat == VIDEO_PROPERTY_QUALITY ) {
 					temp = *((int*)(info.task.msg.arg));
-					if( temp != config.profile.quality ) {
-						config.profile.quality = temp;
-						log_qcy(DEBUG_INFO, "changed the quality = %d", config.profile.quality);
-						video_config_video_set(CONFIG_VIDEO_PROFILE, &config.profile);
-						msg.arg_in.wolf = 1;
-						msg.arg = &temp;
-						msg.arg_size = sizeof(temp);
-					}
+					if( temp == 0 )
+						temp = 3;	//choose a middle range quality for auto mode
+					config.profile.quality = temp;
+					log_qcy(DEBUG_INFO, "changed the quality = %d", config.profile.quality);
+					video_config_video_set(CONFIG_VIDEO_PROFILE, &config.profile);
+					msg.arg_in.wolf = 1;
+					msg.arg = &temp;
+					msg.arg_size = sizeof(temp);
 				}
 				para_set = 1;
 				if( info.task.start == STATUS_IDLE )
@@ -1104,7 +1173,8 @@ static void task_control(void)
 			if( !para_set ) {
 				if( info.task.msg.arg_in.cat == VIDEO_PROPERTY_QUALITY ) {
 					temp = *((int*)(info.task.msg.arg));
-					if( temp == config.profile.quality ) {
+					if( ( (temp == 0) && (config.profile.quality >= AUTO_PROFILE_START) ) ||
+						( temp == config.profile.quality) ) {	//not change if quality is the same
 						msg.arg_in.wolf = 0;
 						msg.arg = &temp;
 						msg.arg_size = sizeof(temp);
@@ -1243,7 +1313,6 @@ exit:
 		if( info.task.msg.sender == SERVER_MISS) misc_set_bit(&info.status2, (RUN_MODE_MISS + info.task.msg.arg_in.wolf), 0);
 		if( info.task.msg.sender == SERVER_MICLOUD) misc_set_bit(&info.status2, RUN_MODE_MICLOUD, 0);
 		if( info.task.msg.sender == SERVER_RECORDER) misc_set_bit(&info.status2, (RUN_MODE_SAVE + info.task.msg.arg_in.wolf), 0);
-		log_qcy(DEBUG_INFO, "=========status2 = %x", info.status2);
 	}
 	manager_common_send_message(info.task.msg.receiver, &msg);
 	msg_free(&info.task.msg);
@@ -1261,9 +1330,13 @@ static void task_exit(void)
 {
 	switch( info.status ){
 		case EXIT_INIT:
-			info.error = VIDEO_EXIT_CONDITION;
+			log_qcy(DEBUG_INFO,"VIDEO: switch to exit task!");
 			if( info.task.msg.sender == SERVER_MANAGER) {
+				info.error = VIDEO_EXIT_CONDITION;
 				info.error &= (info.task.msg.arg_in.cat);
+			}
+			else {
+				info.error = 0;
 			}
 			info.status = EXIT_SERVER;
 			break;

@@ -43,6 +43,8 @@
 #define 	CONFIG_VIDEO_OSD_PATH			"config/video_osd.config"
 #define 	CONFIG_VIDEO_3ACTRL_PATH		"config/video_3actrl.config"
 
+#define		AUTO_PROFILE_START				3
+#define		AUTO_PROFILE_NUM				6
 
 /*
  * structure
@@ -80,7 +82,7 @@ typedef struct isp_ae_para_t {
  */
 typedef struct video_profile_config_t {
 	int						quality;
-	struct rts_av_profile	profile[3];
+	struct rts_av_profile	profile[AUTO_PROFILE_START + AUTO_PROFILE_NUM];
 } video_profile_config_t;
 
 typedef struct video_isp_config_t {
@@ -106,6 +108,10 @@ typedef struct video_isp_config_t {
 typedef struct video_h264_config_t {
 	struct rts_h264_attr		h264_attr;
 	struct rts_video_h264_ctrl	h264_ctrl;
+	int							h264_gop[AUTO_PROFILE_START + AUTO_PROFILE_NUM];
+	int							h264_bitrate[AUTO_PROFILE_START + AUTO_PROFILE_NUM];
+	int							h264_level[AUTO_PROFILE_START + AUTO_PROFILE_NUM];
+	int							h264_qp[AUTO_PROFILE_START + AUTO_PROFILE_NUM];
 } video_h264_config_t;
 
 typedef struct video_osd_config_t {
