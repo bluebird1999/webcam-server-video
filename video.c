@@ -406,7 +406,7 @@ static int *video_main_func(void* arg)
     		continue;
     	if ( buffer ) {
         	packet = av_buffer_get_empty(&vbuffer, &qos.buffer_overrun, &qos.buffer_success);
-        	if( buffer->bytesused > 100*1024 ) {
+        	if( buffer->bytesused > 200*1024 ) {
     			log_qcy(DEBUG_WARNING, "realtek video frame size=%d!!!!!!", buffer->bytesused);
     			rts_av_put_buffer(buffer);
     			continue;
