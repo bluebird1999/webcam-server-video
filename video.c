@@ -706,8 +706,8 @@ static int write_video_buffer(av_packet_t *data, int id, int target, int channel
 	msg.arg_size = 0;
 	if( target == SERVER_MISS )
 		ret = server_miss_video_message(&msg);
-//	else if( target == SERVER_MICLOUD )
-//		ret = server_micloud_video_message(&msg);
+	else if( target == SERVER_MICLOUD )
+		ret = server_micloud_video_message(&msg);
 	else if( target == SERVER_RECORDER )
 		ret = server_recorder_video_message(&msg);
 	/****************************/
