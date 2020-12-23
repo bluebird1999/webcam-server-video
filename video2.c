@@ -1,5 +1,5 @@
 /*
- * video.c
+ * video2.c
  *
  *  Created on: Aug 27, 2020
  *      Author: ning
@@ -27,15 +27,9 @@
 #include "../../server/recorder/recorder_interface.h"
 #include "../../server/device/device_interface.h"
 //server header
-#include "video.h"
-#include "video_interface.h"
-#include "video.h"
-#include "white_balance.h"
-#include "focus.h"
-#include "exposure.h"
-#include "isp.h"
+#include "video2.h"
 #include "config.h"
-
+#include "video2_interface.h"
 /*
  * static
  */
@@ -43,8 +37,8 @@
 static 	message_buffer_t	message;
 static 	server_info_t 		info;
 static	video_stream_t		stream={-1,-1,-1,-1};
-static	video_config_t		config;
-static 	av_buffer_t			vbuffer;
+static	video2_config_t		config;
+static 	av_buffer_t			v2buffer;
 static  pthread_rwlock_t	ilock = PTHREAD_RWLOCK_INITIALIZER;
 static	pthread_rwlock_t	vlock = PTHREAD_RWLOCK_INITIALIZER;
 static	pthread_mutex_t		mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -68,15 +62,14 @@ static void task_exit(void);
 static int server_set_status(int type, int st, int value);
 static void server_thread_termination(int sign);
 //specific
-static int write_video_buffer(av_packet_t *data, int id, int target, int channel);
-static void write_video_info(struct rts_av_buffer *data, av_data_info_t	*info);
-static int *video_3acontrol_func(void *arg);
-static int *video_osd_func(void *arg);
+static int write_video2_buffer(av_packet_t *data, int id, int target, int channel);
+static void write_video2_info(struct rts_av_buffer *data, av_data_info_t	*info);
+static int *video2_osd_func(void *arg);
 static int stream_init(void);
 static int stream_destroy(void);
 static int stream_start(void);
 static int stream_stop(void);
-static int video_init(void);
+static int video2_init(void);
 /*
  * %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
  * %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -86,7 +79,7 @@ static int video_init(void);
 /*
  * helper
  */
-static int video_get_property(message_t *msg)
+static int video2_get_property(message_t *msg)
 {
 	int ret = 0, st;
 	int temp;
@@ -95,44 +88,15 @@ static int video_get_property(message_t *msg)
 	msg_init(&send_msg);
 	memcpy(&(send_msg.arg_pass), &(msg->arg_pass),sizeof(message_arg_t));
 	send_msg.message = msg->message | 0x1000;
-	send_msg.sender = send_msg.receiver = SERVER_VIDEO;
+	send_msg.sender = send_msg.receiver = SERVER_VIDEO2;
 	send_msg.arg_in.cat = msg->arg_in.cat;
 	send_msg.result = 0;
 	/****************************/
-	if( send_msg.arg_in.cat == VIDEO_PROPERTY_SWITCH) {
-		temp = ( st == STATUS_RUN ) ? 1:0;
-		send_msg.arg = (void*)(&temp);
-		send_msg.arg_size = sizeof(temp);
-	}
-	else if( send_msg.arg_in.cat == VIDEO_PROPERTY_IMAGE_ROLLOVER) {
-		if( config.isp.flip == 0 && config.isp.mirror == 0) temp = 0;
-		else if( config.isp.flip == 1 && config.isp.mirror == 1) temp = 180;
-		else{
-			send_msg.result = -1;
-		}
-		send_msg.arg = (void*)(&temp);
-		send_msg.arg_size = sizeof(temp);
-	}
-	else if( send_msg.arg_in.cat == VIDEO_PROPERTY_NIGHT_SHOT) {
-		if( config.isp.ir_mode == VIDEO_ISP_IR_AUTO) temp = 0;
-		else if( config.isp.ir_mode == RTS_ISP_IR_DAY) temp = 1;
-		else if( config.isp.ir_mode == RTS_ISP_IR_NIGHT) temp = 2;
-		send_msg.arg = (void*)(&temp);
-		send_msg.arg_size = sizeof(temp);
-	}
-	else if( send_msg.arg_in.cat == VIDEO_PROPERTY_TIME_WATERMARK) {
-		send_msg.arg = (void*)(&config.osd.enable);
-		send_msg.arg_size = sizeof(config.osd.enable);
-	}
-	else if( send_msg.arg_in.cat == VIDEO_PROPERTY_CUSTOM_DISTORTION) {
-		send_msg.arg = (void*)(&config.isp.ldc);
-		send_msg.arg_size = sizeof(config.isp.ldc);
-	}
 	ret = manager_common_send_message( msg->receiver, &send_msg);
 	return ret;
 }
 
-static int video_set_property(message_t *msg)
+static int video2_set_property(message_t *msg)
 {
 	int ret= 0, mode = -1;
 	message_t send_msg;
@@ -141,71 +105,10 @@ static int video_set_property(message_t *msg)
 	msg_init(&send_msg);
 	memcpy(&(send_msg.arg_pass), &(msg->arg_pass),sizeof(message_arg_t));
 	send_msg.message = msg->message | 0x1000;
-	send_msg.sender = send_msg.receiver = SERVER_VIDEO;
+	send_msg.sender = send_msg.receiver = SERVER_VIDEO2;
 	send_msg.arg_in.cat = msg->arg_in.cat;
 	send_msg.arg_in.wolf = 0;
 	/****************************/
-	if( msg->arg_in.cat == VIDEO_PROPERTY_NIGHT_SHOT ) {
-		int temp = *((int*)(msg->arg));
-		if( temp == 0) {	//automode
-			config.isp.ir_mode = VIDEO_ISP_IR_AUTO;
-			mode = DAY_NIGHT_AUTO;
-		}
-		else if( temp == 1) {//close
-			ret = video_isp_set_attr(RTS_VIDEO_CTRL_ID_IR_MODE, RTS_ISP_IR_DAY);
-			if(!ret) {
-				config.isp.ir_mode = RTS_ISP_IR_DAY;
-			}
-			ret = video_isp_set_attr(RTS_VIDEO_CTRL_ID_GRAY_MODE, RTS_ISP_IR_DAY);
-			if(!ret) {
-				config.isp.ir_mode = RTS_ISP_IR_DAY;
-			}
-			mode = DAY_NIGHT_OFF;
-		}
-		else if( temp == 2) {//open
-			ret = video_isp_set_attr(RTS_VIDEO_CTRL_ID_IR_MODE, RTS_ISP_IR_NIGHT);
-			if(!ret) {
-				config.isp.ir_mode = RTS_ISP_IR_NIGHT;
-			}
-			ret = video_isp_set_attr(RTS_VIDEO_CTRL_ID_GRAY_MODE, RTS_ISP_IR_NIGHT);
-			if(!ret) {
-				config.isp.ir_mode = RTS_ISP_IR_NIGHT;
-			}
-			mode = DAY_NIGHT_ON;
-		}
-		if(!ret) {
-			log_qcy(DEBUG_INFO, "changed the smart night mode = %d", config.isp.ir_mode);
-			video_config_video_set(CONFIG_VIDEO_ISP, &config.isp);
-			send_msg.arg_in.wolf = 1;
-			send_msg.arg = &temp;
-			send_msg.arg_size = sizeof(temp);
-		}
-	}
-	else if( msg->arg_in.cat == VIDEO_PROPERTY_CUSTOM_DISTORTION ) {
-		int temp = *((int*)(msg->arg));
-		if( temp != config.isp.ldc ) {
-			ret = video_isp_set_attr(RTS_VIDEO_CTRL_ID_LDC, temp );
-			if(!ret) {
-				config.isp.ldc = temp;
-				log_qcy(DEBUG_INFO, "changed the lens distortion correction = %d", config.isp.ldc);
-				video_config_video_set(CONFIG_VIDEO_ISP, &config.isp);
-				send_msg.arg_in.wolf = 1;
-				send_msg.arg = &temp;
-				send_msg.arg_size = sizeof(temp);
-			}
-		}
-	}
-	else if( info.task.msg.arg_in.cat == VIDEO_PROPERTY_TIME_WATERMARK ) {
-		int temp = *((int*)(info.task.msg.arg));
-		if( temp != config.osd.enable ) {
-			config.osd.enable = temp;
-			log_qcy(DEBUG_INFO, "changed the osd switch = %d", config.osd.enable);
-			video_config_video_set(CONFIG_VIDEO_OSD,  &config.osd);
-			send_msg.arg_in.wolf = 1;
-			send_msg.arg = &temp;
-			send_msg.arg_size = sizeof(temp);
-		}
-	}
 	/***************************/
 	send_msg.result = ret;
 	ret = manager_common_send_message(msg->receiver, &send_msg);
@@ -213,11 +116,7 @@ static int video_set_property(message_t *msg)
 	return ret;
 }
 
-static int video_process_miss_buffer_msg(message_t *msg)
-{
-}
-
-static int video_qos_check(av_qos_t *qos)
+static int video2_qos_check(av_qos_t *qos)
 {
 	double ratio = 0.0;
 	int ret = REALTEK_OQS_NORMAL;
@@ -239,7 +138,7 @@ static int video_qos_check(av_qos_t *qos)
 	return ret;
 }
 
-static int video_quality_downgrade(av_qos_t *qos)
+static int video2_quality_downgrade(av_qos_t *qos)
 {
 	message_t msg;
 	int ret = 0;
@@ -250,19 +149,19 @@ static int video_quality_downgrade(av_qos_t *qos)
 		return 0;
     /********message body********/
 	msg_init(&msg);
-	msg.message = MSG_VIDEO_PROPERTY_SET_EXT;
-	msg.sender = msg.receiver = SERVER_VIDEO;
-	msg.arg_in.cat = VIDEO_PROPERTY_QUALITY;
+	msg.message = MSG_VIDEO2_PROPERTY_SET_EXT;
+	msg.sender = msg.receiver = SERVER_VIDEO2;
+	msg.arg_in.cat = VIDEO2_PROPERTY_QUALITY;
 	msg.arg = &vq;
 	msg.arg_size = sizeof(vq);
-	ret = server_video_message(&msg);
+	ret = server_video2_message(&msg);
 	/****************************/
 	log_qcy(DEBUG_INFO, "-----------------sample number = %d, success ratio = %f, will downgrade!", qos->buffer_total, qos->buffer_ratio);
 	log_qcy(DEBUG_INFO, "------------------downdgrade current video qulity to %d", vq);
 	return ret;
 }
 
-static int video_quality_upgrade(av_qos_t *qos)
+static int video2_quality_upgrade(av_qos_t *qos)
 {
 	message_t msg;
 	int ret = 0;
@@ -273,107 +172,72 @@ static int video_quality_upgrade(av_qos_t *qos)
 		return 0;
     /********message body********/
 	msg_init(&msg);
-	msg.message = MSG_VIDEO_PROPERTY_SET_EXT;
-	msg.sender = msg.receiver = SERVER_VIDEO;
-	msg.arg_in.cat = VIDEO_PROPERTY_QUALITY;
+	msg.message = MSG_VIDEO2_PROPERTY_SET_EXT;
+	msg.sender = msg.receiver = SERVER_VIDEO2;
+	msg.arg_in.cat = VIDEO2_PROPERTY_QUALITY;
 	msg.arg = &vq;
 	msg.arg_size = sizeof(vq);
-	ret = server_video_message(&msg);
+	ret = server_video2_message(&msg);
 	/****************************/
 	log_qcy(DEBUG_INFO, "-----------------sample number = %d, success ratio = %f, will upgrade!", qos->buffer_total, qos->buffer_ratio);
 	log_qcy(DEBUG_INFO, "------------------upgrade current video qulity to %d", vq);
 	return ret;
 }
 
-static int video_quit_send(int server, int channel)
+static int video2_quit_send(int server, int channel)
 {
 	int ret = 0;
 	message_t msg;
 	msg_init(&msg);
 	msg.sender = msg.receiver = server;
 	msg.arg_in.wolf = channel;
-	msg.message = MSG_VIDEO_STOP;
-	manager_common_send_message(SERVER_VIDEO, &msg);
+	msg.message = MSG_VIDEO2_STOP;
+	manager_common_send_message(SERVER_VIDEO2, &msg);
 	return ret;
 }
 
-static int *video_3acontrol_func(void *arg)
-{
-	video_3actrl_config_t ctrl;
-	server_status_t st;
-    signal(SIGINT, server_thread_termination);
-    signal(SIGTERM, server_thread_termination);
-    misc_set_thread_name("server_video_3a_control");
-    pthread_detach(pthread_self());
-    //init
-    memcpy( &ctrl, (video_3actrl_config_t*)arg, sizeof(video_3actrl_config_t));
-    video_white_balance_init( &ctrl.awb_para);
-    video_exposure_init(&ctrl.ae_para);
-    video_focus_init(&ctrl.af_para);
-    server_set_status(STATUS_TYPE_THREAD_START, THREAD_3ACTRL, 1 );
-    manager_common_send_dummy(SERVER_VIDEO);
-    while( 1 ) {
-    	st = info.status;
-    	if( info.exit ) break;
-    	if( st != STATUS_START && st != STATUS_RUN )
-    		break;
-    	else if( st == STATUS_START )
-    		continue;
-    	if( misc_get_bit(info.thread_exit, THREAD_3ACTRL) ) break;
-    	video_white_balance_proc( &ctrl.awb_para,stream.frame);
-    	video_exposure_proc(&ctrl.ae_para,stream.frame);
-    	video_focus_proc(&ctrl.af_para,stream.frame);
-    	usleep(1000);
-    }
-    //release
-    video_white_balance_release();
-    video_exposure_release();
-    video_focus_release();
-    server_set_status(STATUS_TYPE_THREAD_START, THREAD_3ACTRL, 0 );
-    manager_common_send_dummy(SERVER_VIDEO);
-    log_qcy(DEBUG_INFO, "-----------thread exit: server_video_3a_control-----------");
-    pthread_exit(0);
-}
-
-static int *video_osd_func(void *arg)
+static int *video2_osd_func(void *arg)
 {
 	int ret=0, st;
-	video_osd_config_t ctrl;
+	video2_osd_config_t ctrl;
     signal(SIGINT, server_thread_termination);
     signal(SIGTERM, server_thread_termination);
-    misc_set_thread_name("server_video_osd");
+    signal(SIGSEGV, signal_handler);
+    signal(SIGFPE,  signal_handler);
+    signal(SIGBUS,  signal_handler);
+    misc_set_thread_name("server_video2_osd");
     pthread_detach(pthread_self());
     //init
-    memcpy( &ctrl,(video_osd_config_t*)arg, sizeof(video_osd_config_t));
-    ret = video_osd_init(&ctrl, stream.osd, config.profile.profile[config.profile.quality].video.width,
+    memcpy( &ctrl,(video2_osd_config_t*)arg, sizeof(video2_osd_config_t));
+    ret = video2_osd_init(&ctrl, stream.osd, config.profile.profile[config.profile.quality].video.width,
     		config.profile.profile[config.profile.quality].video.height);
     if( ret != 0) {
     	log_qcy(DEBUG_SERIOUS, "osd init error!");
     	goto exit;
     }
-    server_set_status(STATUS_TYPE_THREAD_START, THREAD_OSD, 1 );
-    manager_common_send_dummy(SERVER_VIDEO);
+    server_set_status(STATUS_TYPE_THREAD_START, THREAD_OSD2, 1 );
+    manager_common_send_dummy(SERVER_VIDEO2);
     while( 1 ) {
     	if( info.exit ) break;
-    	if( misc_get_bit(info.thread_exit, THREAD_OSD) ) break;
+    	if( misc_get_bit(info.thread_exit, THREAD_OSD2) ) break;
     	st = info.status;
     	if( (st != STATUS_START) && (st != STATUS_RUN) )
     		break;
     	else if( st == STATUS_START )
     		continue;
-   		ret = video_osd_proc(&ctrl);
+   		ret = video2_osd_proc(&ctrl);
     	usleep(1000*100);
     }
     //release
 exit:
-    video_osd_release();
-    server_set_status(STATUS_TYPE_THREAD_START, THREAD_OSD, 0 );
-    manager_common_send_dummy(SERVER_VIDEO);
-    log_qcy(DEBUG_INFO, "-----------thread exit: server_video_osd-----------");
+    video2_osd_release();
+    server_set_status(STATUS_TYPE_THREAD_START, THREAD_OSD2, 0 );
+    manager_common_send_dummy(SERVER_VIDEO2);
+    log_qcy(DEBUG_INFO, "-----------thread exit: server_video2_osd-----------");
     pthread_exit(0);
 }
 
-static int *video_main_func(void* arg)
+static int *video2_main_func(void* arg)
 {
 	int ret=0, st, i;
 	video_stream_t ctrl;
@@ -382,14 +246,17 @@ static int *video_main_func(void* arg)
 	struct rts_av_buffer *buffer = NULL;
     signal(SIGINT, server_thread_termination);
     signal(SIGTERM, server_thread_termination);
-    misc_set_thread_name("server_video_main");
+    signal(SIGSEGV, signal_handler);
+    signal(SIGFPE,  signal_handler);
+    signal(SIGBUS,  signal_handler);
+    misc_set_thread_name("server_video2_main");
     pthread_detach(pthread_self());
     //init
     memset( &qos, 0, sizeof(qos));
     memcpy( &ctrl,(video_stream_t*)arg, sizeof(video_stream_t));
-    av_buffer_init(&vbuffer, &vlock);
-    server_set_status(STATUS_TYPE_THREAD_START, THREAD_VIDEO, 1 );
-    manager_common_send_dummy(SERVER_VIDEO);
+    av_buffer_init(&v2buffer, &vlock);
+    server_set_status(STATUS_TYPE_THREAD_START, THREAD_VIDEO2, 1 );
+    manager_common_send_dummy(SERVER_VIDEO2);
     while( 1 ) {
     	if( info.exit ) break;
     	st = info.status;
@@ -402,12 +269,20 @@ static int *video_main_func(void* arg)
     	if ( ret )
     		continue;
     	ret = rts_av_recv(ctrl.h264, &buffer);
-    	if ( ret )
+    	if ( ret ) {
+    		if( buffer )
+    			rts_av_put_buffer(buffer);
     		continue;
+    	}
     	if ( buffer ) {
-        	packet = av_buffer_get_empty(&vbuffer, &qos.buffer_overrun, &qos.buffer_success);
-        	if( buffer->bytesused > 200*1024 ) {
-    			log_qcy(DEBUG_WARNING, "realtek video frame size=%d!!!!!!", buffer->bytesused);
+        	packet = av_buffer_get_empty(&v2buffer, &qos.buffer_overrun, &qos.buffer_success);
+        	if( (buffer->bytesused > 200*1024) ) {
+    			log_qcy(DEBUG_WARNING, "realtek video2 frame size=%d!!!!!!", buffer->bytesused);
+    			rts_av_put_buffer(buffer);
+    			continue;
+        	}
+        	if( misc_mips_address_check((unsigned int)buffer->vm_addr) ) {
+    			log_qcy(DEBUG_WARNING, "realtek video2 memory address anomity =%p!!!!!!", buffer->vm_addr);
     			rts_av_put_buffer(buffer);
     			continue;
         	}
@@ -422,45 +297,46 @@ static int *video_main_func(void* arg)
     			stream.realtek_stamp = buffer->timestamp;
     			stream.unix_stamp = time_get_now_stamp();
     		}
-    		write_video_info( buffer, &packet->info);
+    		write_video2_info( buffer, &packet->info);
     		rts_av_put_buffer(buffer);
     		for(i=0;i<MAX_SESSION_NUMBER;i++) {
-				if( misc_get_bit(info.status2, RUN_MODE_MISS+i) ) {
-					ret = write_video_buffer(packet, MSG_MISS_VIDEO_DATA, SERVER_MISS, i);
+				if( misc_get_bit(info.status2, RUN_MODE_MISS2+i) ) {
+					ret = write_video2_buffer(packet, MSG_MISS_VIDEO_DATA, SERVER_MISS, i);
 					if( (ret == MISS_LOCAL_ERR_MISS_GONE) || (ret == MISS_LOCAL_ERR_SESSION_GONE) ) {
 						log_qcy(DEBUG_WARNING, "Miss video ring buffer send failed due to non-existing miss server or session");
-						video_quit_send(SERVER_MISS, i);
+						video2_quit_send(SERVER_MISS, i);
 						log_qcy(DEBUG_WARNING, "----shut down video miss stream due to session lost!------");
 					}
 					else if( ret == MISS_LOCAL_ERR_AV_NOT_RUN) {
-						qos.failed_send[RUN_MODE_MISS+i]++;
-						if( qos.failed_send[RUN_MODE_MISS+i] > VIDEO_MAX_FAILED_SEND) {
-							qos.failed_send[RUN_MODE_MISS+i] = 0;
-							video_quit_send(SERVER_MISS, i);
+						qos.failed_send[RUN_MODE_MISS2+i]++;
+						if( qos.failed_send[RUN_MODE_MISS2+i] > VIDEO_MAX_FAILED_SEND) {
+							qos.failed_send[RUN_MODE_MISS2+i] = 0;
+							video2_quit_send(SERVER_MISS, i);
 							log_qcy(DEBUG_WARNING, "----shut down video miss stream due to long overrun!------");
 						}
 					}
 					else if( ret == 0) {
 						av_packet_add(packet);
-						qos.failed_send[RUN_MODE_MISS+i] = 0;
+						qos.failed_send[RUN_MODE_MISS2+i] = 0;
 					}
 				}
     		}
 /*    		if( config.profile.quality >= AUTO_PROFILE_START ) { //auto mode
-				if( video_qos_check(&qos) == REALTEK_QOS_UPGRADE )
-					video_quality_upgrade(&qos);
-				else if( video_qos_check(&qos) == REALTEK_QOS_DOWNGRADE )
-					video_quality_downgrade(&qos);
+				if( video2_qos_check(&qos) == REALTEK_QOS_UPGRADE )
+					video2_quality_upgrade(&qos);
+				else if( video2_qos_check(&qos) == REALTEK_QOS_DOWNGRADE )
+					video2_quality_downgrade(&qos);
     		}
 */
+			av_packet_check(packet);
     	}
     }
     //release
 exit:
-	av_buffer_release(&vbuffer);
-    server_set_status(STATUS_TYPE_THREAD_START, THREAD_VIDEO, 0 );
-    manager_common_send_dummy(SERVER_VIDEO);
-    log_qcy(DEBUG_INFO, "-----------thread exit: server_video_main-----------");
+	av_buffer_release(&v2buffer);
+    server_set_status(STATUS_TYPE_THREAD_START, THREAD_VIDEO2, 0 );
+    manager_common_send_dummy(SERVER_VIDEO2);
+    log_qcy(DEBUG_INFO, "-----------thread exit: server_video2_main-----------");
     pthread_exit(0);
 }
 
@@ -498,7 +374,7 @@ static int stream_destroy(void)
 static int stream_start(void)
 {
 	int ret=0;
-	pthread_t isp_3a_id, osd_id, md_id, main_id;
+	pthread_t osd_id, main_id;
 	config.profile.profile[config.profile.quality].fmt = RTS_V_FMT_YUV420SEMIPLANAR;
 	ret = rts_av_set_profile(stream.isp, &config.profile.profile[config.profile.quality]);
 	info.tick = 0;
@@ -544,36 +420,25 @@ static int stream_start(void)
     	log_qcy(DEBUG_SERIOUS, "start recv h264 fail, ret = %d", ret);
     	return -1;
     }
-/*    //start the 3a control thread
-	ret = pthread_create(&isp_3a_id, NULL, video_3acontrol_func, (void*)&config.a3ctrl);
-	if(ret != 0) {
-		log_qcy(DEBUG_SERIOUS, "3a control thread create error! ret = %d",ret);
-		return -1;
-	 }
-	else {
-		misc_set_bit(&info.tick, THREAD_3ACTRL, 1);
-		log_qcy(DEBUG_SERIOUS, "3a control thread create successful!");
-	}
-*/
 	if( config.osd.enable && stream.osd != -1 ) {
 		//start the osd thread
-		ret = pthread_create(&osd_id, NULL, video_osd_func, (void*)&config.osd);
+		ret = pthread_create(&osd_id, NULL, video2_osd_func, (void*)&config.osd);
 		if(ret != 0) {
-			log_qcy(DEBUG_SERIOUS, "osd thread create error! ret = %d",ret);
+			log_qcy(DEBUG_SERIOUS, "video2 osd thread create error! ret = %d",ret);
 		 }
 		else {
-			misc_set_bit(&info.tick, THREAD_OSD, 1);
-			log_qcy(DEBUG_INFO, "osd thread create successful!");
+			misc_set_bit(&info.tick, THREAD_OSD2, 1);
+			log_qcy(DEBUG_INFO, "video2 osd thread create successful!");
 		}
 	}
-	ret = pthread_create(&main_id, NULL, video_main_func, (void*)&stream);
+	ret = pthread_create(&main_id, NULL, video2_main_func, (void*)&stream);
 	if(ret != 0) {
-		log_qcy(DEBUG_INFO, "video main thread create error! ret = %d",ret);
+		log_qcy(DEBUG_INFO, "video2 main thread create error! ret = %d",ret);
 		return -1;
 	 }
 	else {
-		misc_set_bit(&info.tick, THREAD_VIDEO, 1);
-		log_qcy(DEBUG_SERIOUS, "video main thread create successful!");
+		misc_set_bit(&info.tick, THREAD_VIDEO2, 1);
+		log_qcy(DEBUG_SERIOUS, "video2 main thread create successful!");
 	}
     return 0;
 }
@@ -597,7 +462,7 @@ static int stream_stop(void)
 	return ret;
 }
 
-static void video_init_profile(void)
+static void video2_init_profile(void)
 {
 	int id;
 	if( config.profile.quality == 0 )
@@ -609,19 +474,17 @@ static void video_init_profile(void)
 	config.h264.h264_attr.qp = config.h264.h264_qp[id];
 }
 
-static int video_init(void)
+static int video2_init(void)
 {
 	int ret;
-	struct rts_video_mjpeg_ctrl *mjpeg_ctrl = NULL;
-	pthread_t osd_id;
 	stream_init();
-	stream.isp = rts_av_create_isp_chn(&config.isp.isp_attr);
+	stream.isp = rts_av_create_isp_chn(&config.isp);
 	if (stream.isp < 0) {
 		log_qcy(DEBUG_SERIOUS, "fail to create isp chn, ret = %d", stream.isp);
 		return -1;
 	}
 	log_qcy(DEBUG_INFO, "isp chnno:%d", stream.isp);
-	video_init_profile();
+	video2_init_profile();
 	config.h264.h264_attr.gop = 2 * config.profile.profile[config.profile.quality].video.denominator;
 	stream.h264 = rts_av_create_h264_chn(&config.h264.h264_attr);
 	if (stream.h264 < 0) {
@@ -660,11 +523,10 @@ static int video_init(void)
     		return -1;
     	}
 	}
-	video_isp_init(&config.isp);
 	return 0;
 }
 
-static void write_video_info(struct rts_av_buffer *data, av_data_info_t	*info)
+static void write_video2_info(struct rts_av_buffer *data, av_data_info_t	*info)
 {
 	info->flag = data->flags;
 	info->frame_index = data->frame_idx;
@@ -692,35 +554,32 @@ static void write_video_info(struct rts_av_buffer *data, av_data_info_t	*info)
     info->size = data->bytesused;
 }
 
-static int write_video_buffer(av_packet_t *data, int id, int target, int channel)
+static int write_video2_buffer(av_packet_t *data, int id, int target, int channel)
 {
 	int ret=0;
 	message_t msg;
     /********message body********/
 	msg_init(&msg);
-	msg.sender = msg.receiver = SERVER_VIDEO;
+	msg.sender = msg.receiver = SERVER_VIDEO2;
 	msg.arg_in.wolf = channel;
 	msg.arg_in.handler = session[channel];
 	msg.message = id;
 	msg.arg = data;
-	msg.arg_size = 0;
+	msg.arg_size = 0;	//make sure this is 0 for non-deep-copy
+	msg.extra_size = 0;
 	if( target == SERVER_MISS )
 		ret = server_miss_video_message(&msg);
-	else if( target == SERVER_MICLOUD )
-		ret = server_micloud_video_message(&msg);
-	else if( target == SERVER_RECORDER )
-		ret = server_recorder_video_message(&msg);
 	/****************************/
 	return ret;
 }
 
-static int video_add_session(miss_session_t *ses, int sid)
+static int video2_add_session(miss_session_t *ses, int sid)
 {
 	session[sid] = ses;
 	return 0;
 }
 
-static int video_remove_session(miss_session_t *ses, int sid)
+static int video2_remove_session(miss_session_t *ses, int sid)
 {
 	session[sid] = NULL;
 	return 0;
@@ -747,13 +606,13 @@ static void server_thread_termination(int sign)
     /********message body********/
 	message_t msg;
 	msg_init(&msg);
-	msg.message = MSG_VIDEO_SIGINT;
-	msg.sender = msg.receiver = SERVER_VIDEO;
+	msg.message = MSG_VIDEO2_SIGINT;
+	msg.sender = msg.receiver = SERVER_VIDEO2;
 	manager_common_send_message(SERVER_MANAGER, &msg);
 	/****************************/
 }
 
-static void video_broadcast_thread_exit(void)
+static void video2_broadcast_thread_exit(void)
 {
 }
 
@@ -768,9 +627,9 @@ static void server_release_1(void)
 static void server_release_2(void)
 {
 	msg_buffer_release2(&message, &mutex);
-	memset(&config,0,sizeof(video_config_t));
+	memset(&config,0,sizeof(video2_config_t));
 	memset(&stream,0,sizeof(video_stream_t));
-	video_osd_font_release();
+	video2_osd_font_release();
 }
 
 static void server_release_3(void)
@@ -781,7 +640,7 @@ static void server_release_3(void)
 /*
  *
  */
-static int video_message_filter(message_t  *msg)
+static int video2_message_filter(message_t  *msg)
 {
 	int ret = 0;
 	if( info.task.func == task_exit) { //only system message
@@ -810,47 +669,44 @@ static int server_message_proc(void)
 	pthread_mutex_unlock(&mutex);
 	if( ret == 1)
 		return 0;
-	if( video_message_filter(&msg) ) {
+	if( video2_message_filter(&msg) ) {
 		msg_free(&msg);
-		log_qcy(DEBUG_VERBOSE, "VIDEO message--- sender=%d, message=%x, ret=%d, head=%d, tail=%d was screened, the current task is %p", msg.sender, msg.message,
+		log_qcy(DEBUG_VERBOSE, "VIDEO2 message--- sender=%d, message=%x, ret=%d, head=%d, tail=%d was screened, the current task is %p", msg.sender, msg.message,
 				ret, message.head, message.tail, info.task.func);
 		return -1;
 	}
-	log_qcy(DEBUG_VERBOSE, "-----pop out from the VIDEO message queue: sender=%d, message=%x, ret=%d, head=%d, tail=%d", msg.sender, msg.message,
+	log_qcy(DEBUG_VERBOSE, "-----pop out from the VIDEO2 message queue: sender=%d, message=%x, ret=%d, head=%d, tail=%d", msg.sender, msg.message,
 			ret, message.head, message.tail);
 	msg_init(&info.task.msg);
 	msg_deep_copy(&info.task.msg, &msg);
 	switch(msg.message) {
-		case MSG_VIDEO_START:
+		case MSG_VIDEO2_START:
 			info.task.func = task_start;
 			info.task.start = info.status;
 			info.msg_lock = 1;
 			break;
-		case MSG_VIDEO_STOP:
+		case MSG_VIDEO2_STOP:
 			info.task.msg.arg_in.cat = info.status2;
-			if( msg.sender == SERVER_MISS) misc_set_bit(&info.task.msg.arg_in.cat, (RUN_MODE_MISS + msg.arg_in.wolf), 0);
-			if( msg.sender == SERVER_MICLOUD) misc_set_bit(&info.task.msg.arg_in.cat, RUN_MODE_MICLOUD, 0);
-			if( msg.sender == SERVER_RECORDER) misc_set_bit(&info.task.msg.arg_in.cat, (RUN_MODE_SAVE + msg.arg_in.wolf), 0);
-			if( msg.sender == SERVER_VIDEO) misc_set_bit(&info.task.msg.arg_in.cat, RUN_MODE_MOTION, 0);
+			if( msg.sender == SERVER_MISS) misc_set_bit(&info.task.msg.arg_in.cat, (RUN_MODE_MISS2 + msg.arg_in.wolf), 0);
 			info.task.func = task_stop;
 			info.task.start = info.status;
 			info.msg_lock = 1;
 			break;
-		case MSG_VIDEO_PROPERTY_SET:
+		case MSG_VIDEO2_PROPERTY_SET:
 			info.task.func = task_control;
 			info.task.start = info.status;
 			info.msg_lock = 1;
 			break;
-		case MSG_VIDEO_PROPERTY_SET_EXT:
+		case MSG_VIDEO2_PROPERTY_SET_EXT:
 			info.task.func = task_control_ext;
 			info.task.start = info.status;
 			info.msg_lock = 1;
 			break;
-		case MSG_VIDEO_PROPERTY_SET_DIRECT:
-			video_set_property(&msg);
+		case MSG_VIDEO2_PROPERTY_SET_DIRECT:
+			video2_set_property(&msg);
 			break;
-		case MSG_VIDEO_PROPERTY_GET:
-			ret = video_get_property(&msg);
+		case MSG_VIDEO2_PROPERTY_GET:
+			ret = video2_get_property(&msg);
 			break;
 		case MSG_MANAGER_EXIT:
 			info.task.func = task_exit;
@@ -864,14 +720,14 @@ static int server_message_proc(void)
 		case MSG_MIIO_PROPERTY_GET_ACK:
 			if( msg.arg_in.cat == MIIO_PROPERTY_TIME_SYNC ) {
 				if( msg.arg_in.dog == 1 )
-					misc_set_bit( &info.init_status, VIDEO_INIT_CONDITION_MIIO_TIME, 1);
+					misc_set_bit( &info.init_status, VIDEO2_INIT_CONDITION_MIIO_TIME, 1);
 			}
 			break;
 		case MSG_REALTEK_PROPERTY_NOTIFY:
 		case MSG_REALTEK_PROPERTY_GET_ACK:
 			if( msg.arg_in.cat == REALTEK_PROPERTY_AV_STATUS ) {
 				if( msg.arg_in.dog == 1 )
-					misc_set_bit(&info.init_status, VIDEO_INIT_CONDITION_REALTEK, 1);
+					misc_set_bit(&info.init_status, VIDEO2_INIT_CONDITION_REALTEK, 1);
 			}
 			break;
 		case MSG_MANAGER_EXIT_ACK:
@@ -880,7 +736,6 @@ static int server_message_proc(void)
 		case MSG_MANAGER_DUMMY:
 			break;
 		case MSG_MISS_BUFFER_FULL:
-			video_process_miss_buffer_msg(&msg);
 			break;
 		default:
 			log_qcy(DEBUG_SERIOUS, "not processed message = %x", msg.message);
@@ -897,39 +752,39 @@ static int server_none(void)
 {
 	int ret = 0;
 	message_t msg;
-	if( !misc_get_bit( info.init_status, VIDEO_INIT_CONDITION_CONFIG ) ) {
-		ret = video_config_video_read(&config);
-		if( !ret && misc_full_bit( config.status, CONFIG_VIDEO_MODULE_NUM) ) {
-			misc_set_bit(&info.init_status, VIDEO_INIT_CONDITION_CONFIG, 1);
+	if( !misc_get_bit( info.init_status, VIDEO2_INIT_CONDITION_CONFIG ) ) {
+		ret = video2_config_video_read(&config);
+		if( !ret && misc_full_bit( config.status, CONFIG_VIDEO2_MODULE_NUM) ) {
+			misc_set_bit(&info.init_status, VIDEO2_INIT_CONDITION_CONFIG, 1);
 		}
 		else {
 			info.status = STATUS_ERROR;
 			return -1;
 		}
 	}
-	if( !misc_get_bit( info.init_status, VIDEO_INIT_CONDITION_REALTEK ) ) {
+	if( !misc_get_bit( info.init_status, VIDEO2_INIT_CONDITION_REALTEK ) ) {
 		/********message body********/
 		msg_init(&msg);
 		msg.message = MSG_REALTEK_PROPERTY_GET;
-		msg.sender = msg.receiver = SERVER_VIDEO;
+		msg.sender = msg.receiver = SERVER_VIDEO2;
 		msg.arg_in.cat = REALTEK_PROPERTY_AV_STATUS;
 		manager_common_send_message(SERVER_REALTEK,    &msg);
 		/****************************/
 		usleep(MESSAGE_RESENT_SLEEP);
 	}
-	if( !misc_get_bit( info.init_status, VIDEO_INIT_CONDITION_MIIO_TIME)) {
+	if( !misc_get_bit( info.init_status, VIDEO2_INIT_CONDITION_MIIO_TIME)) {
 		/********message body********/
 		msg_init(&msg);
 		msg.message = MSG_MIIO_PROPERTY_GET;
-		msg.sender = msg.receiver = SERVER_VIDEO;
+		msg.sender = msg.receiver = SERVER_VIDEO2;
 		msg.arg_in.cat = MIIO_PROPERTY_TIME_SYNC;
 		ret = manager_common_send_message(SERVER_MIIO, &msg);
 		/***************************/
 		usleep(MESSAGE_RESENT_SLEEP);
 	}
-	if( misc_full_bit( info.init_status, VIDEO_INIT_CONDITION_NUM ) ) {
+	if( misc_full_bit( info.init_status, VIDEO2_INIT_CONDITION_NUM ) ) {
 		info.status = STATUS_WAIT;
-		video_osd_font_init(&config.osd);
+		video2_osd_font_init(&config.osd);
 	}
 	return ret;
 }
@@ -937,8 +792,7 @@ static int server_none(void)
 static int server_setup(void)
 {
 	int ret = 0;
-	message_t msg;
-	if( video_init() == 0) {
+	if( video2_init() == 0) {
 		info.status = STATUS_IDLE;
 	}
 	else
@@ -988,7 +842,7 @@ static void task_control_ext(void)
 	msg_init(&msg);
 	memcpy(&(msg.arg_pass), &(info.task.msg.arg_pass),sizeof(message_arg_t));
 	msg.message = info.task.msg.message | 0x1000;
-	msg.sender = msg.receiver = SERVER_VIDEO;
+	msg.sender = msg.receiver = SERVER_VIDEO2;
 	msg.result = 0;
 	msg.arg_in.wolf = 0;
 	/***************************/
@@ -998,43 +852,24 @@ static void task_control_ext(void)
 			break;
 		case STATUS_WAIT:
 			if( info.thread_start == 0 ) {
-				if( info.task.msg.arg_in.cat == VIDEO_PROPERTY_TIME_WATERMARK ) {
-					int temp = *((int*)(info.task.msg.arg));
+				if( info.task.msg.arg_in.cat == VIDEO2_PROPERTY_TIME_WATERMARK ) {
+					temp = *((int*)(info.task.msg.arg));
 					if( temp != config.osd.enable) {
 						config.osd.enable = temp;
-						log_qcy(DEBUG_INFO, "changed the osd switch = %d", config.osd.enable);
-						video_config_video_set(CONFIG_VIDEO_OSD,  &config.osd);
+						log_qcy(DEBUG_INFO, "changed the osd2 switch = %d", config.osd.enable);
+						video2_config_video_set(CONFIG_VIDEO2_OSD,  &config.osd);
 						msg.arg_in.wolf = 1;
 						msg.arg = &temp;
 						msg.arg_size = sizeof(temp);
 					}
 				}
-				else if( info.task.msg.arg_in.cat == VIDEO_PROPERTY_IMAGE_ROLLOVER ) {
-					int temp = *((int*)(info.task.msg.arg));
-					if( ( (temp==0) && ( (config.isp.flip!=0) || (config.isp.mirror!=0) ) ) ||
-							( (temp==180) && ( (config.isp.flip!=1) || (config.isp.mirror!=1) ) ) ) {
-						if( temp == 0 )  {
-							config.isp.flip = 0;
-							config.isp.mirror = 0;
-						}
-						else if( temp == 180 ) {
-							config.isp.flip = 1;
-							config.isp.mirror = 1;
-						}
-						log_qcy(DEBUG_INFO, "changed the image rollover, flip = %d, mirror = %d ", config.isp.flip, config.isp.mirror );
-						video_config_video_set(CONFIG_VIDEO_ISP,  &config.isp);
-						msg.arg_in.wolf = 1;
-						msg.arg = &temp;
-						msg.arg_size = sizeof(temp);
-					}
-				}
-				else if( info.task.msg.arg_in.cat == VIDEO_PROPERTY_QUALITY ) {
+				else if( info.task.msg.arg_in.cat == VIDEO2_PROPERTY_QUALITY ) {
 					temp = *((int*)(info.task.msg.arg));
 					if( temp == 0 )
 						temp = 3;	//choose a middle range quality for auto mode
 					config.profile.quality = temp;
-					log_qcy(DEBUG_INFO, "changed the quality = %d", config.profile.quality);
-					video_config_video_set(CONFIG_VIDEO_PROFILE, &config.profile);
+					log_qcy(DEBUG_INFO, "changed the video quality = %d", config.profile.quality);
+					video2_config_video_set(CONFIG_VIDEO2_PROFILE, &config.profile);
 					msg.arg_in.wolf = 1;
 					msg.arg = &temp;
 					msg.arg_size = sizeof(temp);
@@ -1063,7 +898,7 @@ static void task_control_ext(void)
 			server_start();
 		case STATUS_RUN:
 			if( !para_set ) {
-				if( info.task.msg.arg_in.cat == VIDEO_PROPERTY_TIME_WATERMARK ) {
+				if( info.task.msg.arg_in.cat == VIDEO2_PROPERTY_TIME_WATERMARK ) {
 					temp = *((int*)(info.task.msg.arg));
 					if( temp == config.osd.enable ) {
 						msg.arg_in.wolf = 0;
@@ -1072,17 +907,7 @@ static void task_control_ext(void)
 						goto exit;
 					}
 				}
-				else if( info.task.msg.arg_in.cat == VIDEO_PROPERTY_IMAGE_ROLLOVER ) {
-					temp = *((int*)(info.task.msg.arg));
-					if( ( (temp==0) && ( (config.isp.flip==0) || (config.isp.mirror==0) ) ) ||
-							( (temp==180) && ( (config.isp.flip==1) || (config.isp.mirror==1) ) ) ) {
-						msg.arg_in.wolf = 0;
-						msg.arg = &temp;
-						msg.arg_size = sizeof(temp);
-						goto exit;
-					}
-				}
-				else if( info.task.msg.arg_in.cat == VIDEO_PROPERTY_QUALITY ) {
+				else if( info.task.msg.arg_in.cat == VIDEO2_PROPERTY_QUALITY ) {
 					temp = *((int*)(info.task.msg.arg));
 					if( ( (temp == 0) && (config.profile.quality >= AUTO_PROFILE_START) ) ||
 						( temp == config.profile.quality) ) {	//not change if quality is the same
@@ -1095,7 +920,7 @@ static void task_control_ext(void)
 				info.status = STATUS_RESTART;
 			}
 			else {
-				if( misc_get_bit( info.thread_start, THREAD_VIDEO ) )
+				if( misc_get_bit( info.thread_start, THREAD_VIDEO2 ) )
 					goto exit;
 			}
 			break;
@@ -1113,7 +938,8 @@ static void task_control_ext(void)
 	}
 	return;
 exit:
-	manager_common_send_message(info.task.msg.receiver, &msg);
+	if( info.task.msg.arg_in.cat != VIDEO2_PROPERTY_TIME_WATERMARK)	//not reply watermark setting for miio response integrity
+		manager_common_send_message(info.task.msg.receiver, &msg);
 	para_set = 0;
 	info.task.func = &task_default;
 	info.msg_lock = 0;
@@ -1132,7 +958,7 @@ static void task_control(void)
 	msg_init(&msg);
 	memcpy(&(msg.arg_pass), &(info.task.msg.arg_pass),sizeof(message_arg_t));
 	msg.message = info.task.msg.message | 0x1000;
-	msg.sender = msg.receiver = SERVER_VIDEO;
+	msg.sender = msg.receiver = SERVER_VIDEO2;
 	msg.result = 0;
 	msg.arg_in.cat = 0;
 	/***************************/
@@ -1148,13 +974,13 @@ static void task_control(void)
 			break;
 		case STATUS_IDLE:
 			if( info.thread_start == 0) {
-				if( info.task.msg.arg_in.cat == VIDEO_PROPERTY_QUALITY ) {
+				if( info.task.msg.arg_in.cat == VIDEO2_PROPERTY_QUALITY ) {
 					temp = *((int*)(info.task.msg.arg));
 					if( temp == 0 )
 						temp = 3;	//choose a middle range quality for auto mode
 					config.profile.quality = temp;
 					log_qcy(DEBUG_INFO, "changed the quality = %d", config.profile.quality);
-					video_config_video_set(CONFIG_VIDEO_PROFILE, &config.profile);
+					video2_config_video_set(CONFIG_VIDEO2_PROFILE, &config.profile);
 					msg.arg_in.wolf = 1;
 					msg.arg = &temp;
 					msg.arg_size = sizeof(temp);
@@ -1171,7 +997,7 @@ static void task_control(void)
 			break;
 		case STATUS_RUN:
 			if( !para_set ) {
-				if( info.task.msg.arg_in.cat == VIDEO_PROPERTY_QUALITY ) {
+				if( info.task.msg.arg_in.cat == VIDEO2_PROPERTY_QUALITY ) {
 					temp = *((int*)(info.task.msg.arg));
 					if( ( (temp == 0) && (config.profile.quality >= AUTO_PROFILE_START) ) ||
 						( temp == config.profile.quality) ) {	//not change if quality is the same
@@ -1184,7 +1010,7 @@ static void task_control(void)
 				info.status = STATUS_STOP;
 			}
 			else {
-				if( misc_get_bit( info.thread_start, THREAD_VIDEO ) )
+				if( misc_get_bit( info.thread_start, THREAD_VIDEO2 ) )
 					goto exit;
 			}
 			break;
@@ -1217,7 +1043,7 @@ static void task_start(void)
 	msg_init(&msg);
 	memcpy(&(msg.arg_pass), &(info.task.msg.arg_pass),sizeof(message_arg_t));
 	msg.message = info.task.msg.message | 0x1000;
-	msg.sender = msg.receiver = SERVER_VIDEO;
+	msg.sender = msg.receiver = SERVER_VIDEO2;
 	msg.result = 0;
 	/***************************/
 	switch(info.status){
@@ -1237,7 +1063,7 @@ static void task_start(void)
 			server_start();
 			break;
 		case STATUS_RUN:
-			if( misc_get_bit( info.thread_start, THREAD_VIDEO ) )
+			if( misc_get_bit( info.thread_start, THREAD_VIDEO2 ) )
 				goto exit;
 			break;
 		case STATUS_ERROR:
@@ -1252,11 +1078,9 @@ static void task_start(void)
 exit:
 	if( msg.result == 0 ) {
 		if( info.task.msg.sender == SERVER_MISS ) {
-			video_add_session(info.task.msg.arg_in.handler, info.task.msg.arg_in.wolf);
+			video2_add_session(info.task.msg.arg_in.handler, info.task.msg.arg_in.wolf);
 		}
-		if( info.task.msg.sender == SERVER_MISS ) misc_set_bit(&info.status2, (RUN_MODE_MISS + info.task.msg.arg_in.wolf), 1);
-		if( info.task.msg.sender == SERVER_MICLOUD) misc_set_bit(&info.status2, RUN_MODE_MICLOUD, 1);
-		if( info.task.msg.sender == SERVER_RECORDER) misc_set_bit(&info.status2, (RUN_MODE_SAVE + info.task.msg.arg_in.wolf), 1);
+		if( info.task.msg.sender == SERVER_MISS ) misc_set_bit(&info.status2, (RUN_MODE_MISS2 + info.task.msg.arg_in.wolf), 1);
 	}
 	manager_common_send_message(info.task.msg.receiver, &msg);
 	msg_free(&info.task.msg);
@@ -1274,7 +1098,7 @@ static void task_stop(void)
 	msg_init(&msg);
 	memcpy(&(msg.arg_pass), &(info.task.msg.arg_pass),sizeof(message_arg_t));
 	msg.message = info.task.msg.message | 0x1000;
-	msg.sender = msg.receiver = SERVER_VIDEO;
+	msg.sender = msg.receiver = SERVER_VIDEO2;
 	msg.result = 0;
 	/***************************/
 	switch(info.status){
@@ -1308,11 +1132,9 @@ static void task_stop(void)
 exit:
 	if( msg.result==0 ) {
 		if( info.task.msg.sender == SERVER_MISS ) {
-			video_remove_session(info.task.msg.arg_in.handler, info.task.msg.arg_in.wolf);
+			video2_remove_session(info.task.msg.arg_in.handler, info.task.msg.arg_in.wolf);
 		}
-		if( info.task.msg.sender == SERVER_MISS) misc_set_bit(&info.status2, (RUN_MODE_MISS + info.task.msg.arg_in.wolf), 0);
-		if( info.task.msg.sender == SERVER_MICLOUD) misc_set_bit(&info.status2, RUN_MODE_MICLOUD, 0);
-		if( info.task.msg.sender == SERVER_RECORDER) misc_set_bit(&info.status2, (RUN_MODE_SAVE + info.task.msg.arg_in.wolf), 0);
+		if( info.task.msg.sender == SERVER_MISS) misc_set_bit(&info.status2, (RUN_MODE_MISS2 + info.task.msg.arg_in.wolf), 0);
 	}
 	manager_common_send_message(info.task.msg.receiver, &msg);
 	msg_free(&info.task.msg);
@@ -1330,9 +1152,9 @@ static void task_exit(void)
 {
 	switch( info.status ){
 		case EXIT_INIT:
-			log_qcy(DEBUG_INFO,"VIDEO: switch to exit task!");
+			log_qcy(DEBUG_INFO,"VIDEO2: switch to exit task!");
 			if( info.task.msg.sender == SERVER_MANAGER) {
-				info.error = VIDEO_EXIT_CONDITION;
+				info.error = VIDEO2_EXIT_CONDITION;
 				info.error &= (info.task.msg.arg_in.cat);
 			}
 			else {
@@ -1350,7 +1172,7 @@ static void task_exit(void)
 			break;
 		case EXIT_THREAD:
 			info.thread_exit = info.thread_start;
-			video_broadcast_thread_exit();
+			video2_broadcast_thread_exit();
 			if( !info.thread_start )
 				info.status = EXIT_STAGE2;
 			break;
@@ -1365,7 +1187,7 @@ static void task_exit(void)
 			message_t msg;
 			msg_init(&msg);
 			msg.message = MSG_MANAGER_EXIT_ACK;
-			msg.sender = SERVER_VIDEO;
+			msg.sender = SERVER_VIDEO2;
 			manager_common_send_message(SERVER_MANAGER, &msg);
 			/***************************/
 			info.status = STATUS_NONE;
@@ -1417,7 +1239,10 @@ static void *server_func(void)
 {
     signal(SIGINT, server_thread_termination);
     signal(SIGTERM, server_thread_termination);
-	misc_set_thread_name("server_video");
+    signal(SIGSEGV, signal_handler);
+    signal(SIGFPE,  signal_handler);
+    signal(SIGBUS,  signal_handler);
+	misc_set_thread_name("server_video2");
 	pthread_detach(pthread_self());
 	msg_buffer_init2(&message, MSG_BUFFER_OVERFLOW_NO, &mutex);
 	info.init = 1;
@@ -1429,7 +1254,7 @@ static void *server_func(void)
 		server_message_proc();
 	}
 	server_release_3();
-	log_qcy(DEBUG_INFO, "-----------thread exit: server_video-----------");
+	log_qcy(DEBUG_INFO, "-----------thread exit: server_video2-----------");
 	pthread_exit(0);
 }
 
@@ -1440,34 +1265,34 @@ static void *server_func(void)
 /*
  * external interface
  */
-int server_video_start(void)
+int server_video2_start(void)
 {
 	int ret=-1;
 	ret = pthread_create(&info.id, NULL, server_func, NULL);
 	if(ret != 0) {
-		log_qcy(DEBUG_SERIOUS, "video server create error! ret = %d",ret);
+		log_qcy(DEBUG_SERIOUS, "video2 server create error! ret = %d",ret);
 		 return ret;
 	 }
 	else {
-		log_qcy(DEBUG_INFO, "video server create successful!");
+		log_qcy(DEBUG_INFO, "video2 server create successful!");
 		return 0;
 	}
 }
 
-int server_video_message(message_t *msg)
+int server_video2_message(message_t *msg)
 {
 	int ret=0;
 	pthread_mutex_lock(&mutex);
 	if( !message.init ) {
-		log_qcy(DEBUG_SERIOUS, "video server is not ready for message processing!");
+		log_qcy(DEBUG_SERIOUS, "video2 server is not ready for message processing!");
 		pthread_mutex_unlock(&mutex);
 		return -1;
 	}
 	ret = msg_buffer_push(&message, msg);
-	log_qcy(DEBUG_VERBOSE, "push into the video message queue: sender=%d, message=%x, ret=%d, head=%d, tail=%d", msg->sender, msg->message, ret,
+	log_qcy(DEBUG_VERBOSE, "push into the video2 message queue: sender=%d, message=%x, ret=%d, head=%d, tail=%d", msg->sender, msg->message, ret,
 			message.head, message.tail);
 	if( ret!=0 )
-		log_qcy(DEBUG_WARNING, "message push in video error =%d", ret);
+		log_qcy(DEBUG_WARNING, "message push in video2 error =%d", ret);
 	else {
 		pthread_cond_signal(&cond);
 	}
