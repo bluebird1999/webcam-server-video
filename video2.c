@@ -18,6 +18,8 @@
 #include <rtsvideo.h>
 #include <malloc.h>
 #include <miss.h>
+#include <malloc.h>
+
 //program header
 #include "../../manager/manager_interface.h"
 #include "../../server/realtek/realtek_interface.h"
@@ -634,6 +636,7 @@ static void server_release_2(void)
 
 static void server_release_3(void)
 {
+	msg_free(&info.task.msg);
 	memset(&info, 0, sizeof(server_info_t));
 }
 
@@ -677,15 +680,17 @@ static int server_message_proc(void)
 	}
 	log_qcy(DEBUG_VERBOSE, "-----pop out from the VIDEO2 message queue: sender=%d, message=%x, ret=%d, head=%d, tail=%d", msg.sender, msg.message,
 			ret, message.head, message.tail);
-	msg_init(&info.task.msg);
-	msg_deep_copy(&info.task.msg, &msg);
 	switch(msg.message) {
 		case MSG_VIDEO2_START:
+			msg_init(&info.task.msg);
+			msg_copy(&info.task.msg, &msg);
 			info.task.func = task_start;
 			info.task.start = info.status;
 			info.msg_lock = 1;
 			break;
 		case MSG_VIDEO2_STOP:
+			msg_init(&info.task.msg);
+			msg_copy(&info.task.msg, &msg);
 			info.task.msg.arg_in.cat = info.status2;
 			if( msg.sender == SERVER_MISS) misc_set_bit(&info.task.msg.arg_in.cat, (RUN_MODE_MISS2 + msg.arg_in.wolf), 0);
 			info.task.func = task_stop;
@@ -693,11 +698,15 @@ static int server_message_proc(void)
 			info.msg_lock = 1;
 			break;
 		case MSG_VIDEO2_PROPERTY_SET:
+			msg_init(&info.task.msg);
+			msg_deep_copy(&info.task.msg, &msg);
 			info.task.func = task_control;
 			info.task.start = info.status;
 			info.msg_lock = 1;
 			break;
 		case MSG_VIDEO2_PROPERTY_SET_EXT:
+			msg_init(&info.task.msg);
+			msg_deep_copy(&info.task.msg, &msg);
 			info.task.func = task_control_ext;
 			info.task.start = info.status;
 			info.msg_lock = 1;
@@ -709,6 +718,8 @@ static int server_message_proc(void)
 			ret = video2_get_property(&msg);
 			break;
 		case MSG_MANAGER_EXIT:
+			msg_init(&info.task.msg);
+			msg_copy(&info.task.msg, &msg);
 			info.task.func = task_exit;
 			info.status = EXIT_INIT;
 			info.msg_lock = 0;
