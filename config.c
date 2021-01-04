@@ -14,7 +14,9 @@
 #include <stdio.h>
 #include <rtsvideo.h>
 #include <malloc.h>
-
+#ifdef DMALLOC_ENABLE
+#include <dmalloc.h>
+#endif
 //program header
 #include "../../tools/tools_interface.h"
 #include "../../manager/manager_interface.h"
@@ -333,7 +335,7 @@ int video2_config_video_set(int module, void* arg)
 		msg_init(&msg);
 		msg.message = MSG_MANAGER_TIMER_ADD;
 		msg.sender = SERVER_VIDEO2;
-		msg.arg_in.cat = 30000;	//1min
+		msg.arg_in.cat = FILE_FLUSH_TIME;	//1min
 		msg.arg_in.dog = 0;
 		msg.arg_in.duck = 0;
 		msg.arg_in.handler = &video2_config_save;

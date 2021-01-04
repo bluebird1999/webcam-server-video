@@ -19,7 +19,9 @@
 #include <malloc.h>
 #include <miss.h>
 #include <malloc.h>
-
+#ifdef DMALLOC_ENABLE
+#include <dmalloc.h>
+#endif
 //program header
 #include "../../manager/manager_interface.h"
 #include "../../server/realtek/realtek_interface.h"
@@ -228,7 +230,7 @@ static int *video2_osd_func(void *arg)
     	else if( st == STATUS_START )
     		continue;
    		ret = video2_osd_proc(&ctrl);
-    	usleep(1000*100);
+    	usleep(1000*500);
     }
     //release
 exit:
