@@ -68,6 +68,7 @@ static config_map_t video_config_isp_map[] = {
     {"noise_reduction",			&(video_config.isp.noise_reduction),		cfg_u32, 4,0,1,7,},
 	{"in_out_door_mode",		&(video_config.isp.in_out_door_mode),		cfg_u32, 0,0,0,2,},
     {"detail_enhancement", 		&(video_config.isp.detail_enhancement), 	cfg_u32, 4,0,1,7,},
+	{"3dnr",			 		&(video_config.isp.d3nr), 					cfg_u32, 1,0,1,1,},
     {NULL,},
 };
 
@@ -82,9 +83,9 @@ static config_map_t video_config_h264_map[] = {
     {"supported_gop_mode",			&(video_config.h264.h264_ctrl.supported_gop_mode),			cfg_u32, 0,0,0,100,},
 	{"bitrate_mode",				&(video_config.h264.h264_ctrl.bitrate_mode),				cfg_u32, 8,0,0,1000000,},
 	{"gop_mode",					&(video_config.h264.h264_ctrl.gop_mode),					cfg_u32, 0,0,0,100,},
-	{"bitrate",						&(video_config.h264.h264_ctrl.bitrate),						cfg_u32, 0,0,0,40000000,},
-	{"max_bitrate",					&(video_config.h264.h264_ctrl.max_bitrate),					cfg_u32, 0,0,0,100,},
-    {"min_bitrate", 				&(video_config.h264.h264_ctrl.min_bitrate), 				cfg_u32, 0,0,0,100,},
+	{"bitrate",						&(video_config.h264.h264_ctrl.bitrate),						cfg_u32, 0,0,0,400000000,},
+	{"max_bitrate",					&(video_config.h264.h264_ctrl.max_bitrate),					cfg_u32, 0,0,0,1000000000,},
+    {"min_bitrate", 				&(video_config.h264.h264_ctrl.min_bitrate), 				cfg_u32, 0,0,0,1000000000,},
     {"qp",							&(video_config.h264.h264_ctrl.qp),							cfg_s32, 0,0,-1,100,},
 	{"max_qp",						&(video_config.h264.h264_ctrl.max_qp),						cfg_u32, 0,0,0,51,},
 	{"min_qp",						&(video_config.h264.h264_ctrl.min_qp),						cfg_u32, 0,0,0,51,},

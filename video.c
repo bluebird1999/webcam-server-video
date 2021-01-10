@@ -43,7 +43,6 @@
 #include "exposure.h"
 #include "focus.h"
 #include "isp.h"
-#include "jpeg.h"
 #include "md.h"
 #include "white_balance.h"
 
@@ -370,10 +369,6 @@ exit:
 	if( arg )
     	free(arg);
     log_qcy(DEBUG_INFO, "-----------thread exit: video_jpeg_thumbnail-----------");
-	send_msg.sender = send_msg.receiver = SERVER_VIDEO;
-	send_msg.message = MSG_DEVICE_ACTION;
-	send_msg.arg_in.cat = DEVICE_ACTION_SD_EJECTED_ACK;
-	manager_common_send_message(SERVER_DEVICE, &send_msg);
     pthread_exit(0);
 }
 
@@ -439,7 +434,7 @@ static int video_snapshot(message_t *msg)
 	}
 	else if( msg->arg_in.chick == RECORDER_TYPE_HUMAN_DETECTION ) {
 		memset( filename, 0, sizeof(filename) );
-		sprintf( filename, "%smotion_spd.jpg", config.jpg.image_path );
+		sprintf( filename, "%smotion.jpg", config.jpg.image_path );
 	}
 	else {
 		memset(filename, 0, sizeof(filename));
@@ -538,9 +533,6 @@ static int *video_md_func(void *arg)
 	char fname[MAX_SYSTEM_STRING_SIZE];
     signal(SIGINT, server_thread_termination);
     signal(SIGTERM, server_thread_termination);
-    signal(SIGSEGV, signal_handler);
-    signal(SIGFPE,  signal_handler);
-    signal(SIGBUS,  signal_handler);
     sprintf(fname, "md-%d",time_get_now_stamp());
     misc_set_thread_name(fname);
     pthread_detach(pthread_self());
@@ -579,9 +571,6 @@ static int *video_3acontrol_func(void *arg)
 	server_status_t st;
     signal(SIGINT, server_thread_termination);
     signal(SIGTERM, server_thread_termination);
-    signal(SIGSEGV, signal_handler);
-    signal(SIGFPE,  signal_handler);
-    signal(SIGBUS,  signal_handler);
     misc_set_thread_name("server_video_3a_control");
     pthread_detach(pthread_self());
     //init
@@ -620,9 +609,6 @@ static int *video_osd_func(void *arg)
 	video_osd_config_t ctrl;
     signal(SIGINT, server_thread_termination);
     signal(SIGTERM, server_thread_termination);
-    signal(SIGSEGV, signal_handler);
-    signal(SIGFPE,  signal_handler);
-    signal(SIGBUS,  signal_handler);
     misc_set_thread_name("server_video_osd");
     pthread_detach(pthread_self());
     //init
@@ -666,15 +652,12 @@ static int *video_main_func(void* arg)
 	struct rts_av_buffer *buffer = NULL;
     signal(SIGINT, server_thread_termination);
     signal(SIGTERM, server_thread_termination);
-    signal(SIGSEGV, signal_handler);
-    signal(SIGFPE,  signal_handler);
-    signal(SIGBUS,  signal_handler);
     misc_set_thread_name("server_video_main");
     pthread_detach(pthread_self());
     //init
     memset( &qos, 0, sizeof(qos));
     memcpy( &ctrl,(video_stream_t*)arg, sizeof(video_stream_t));
-    av_buffer_init(&vbuffer, &vlock);
+   	av_buffer_init(&vbuffer, &vlock);
     server_set_status(STATUS_TYPE_THREAD_START, THREAD_VIDEO, 1 );
     manager_common_send_dummy(SERVER_VIDEO);
     while( 1 ) {
@@ -701,30 +684,40 @@ static int *video_main_func(void* arg)
         		rts_av_put_buffer(buffer);
         		continue;
         	}
-        	packet = av_buffer_get_empty(&vbuffer, &qos.buffer_overrun, &qos.buffer_success);
-        	if( buffer->bytesused > 200*1024 ) {
-    			log_qcy(DEBUG_WARNING, "realtek video frame size=%d!!!!!!", buffer->bytesused);
-    			rts_av_put_buffer(buffer);
-    			continue;
-        	}
         	if( misc_mips_address_check((unsigned int)buffer->vm_addr) ) {
     			log_qcy(DEBUG_WARNING, "realtek video memory address anomity =%p!!!!!!", buffer->vm_addr);
     			rts_av_put_buffer(buffer);
     			continue;
         	}
-    		packet->data = malloc( buffer->bytesused );
-    		if( packet->data == NULL) {
-    			log_qcy(DEBUG_WARNING, "allocate memory failed in video buffer, size=%d", buffer->bytesused);
-    			rts_av_put_buffer(buffer);
-    			continue;
-    		}
-    		memcpy(packet->data, buffer->vm_addr, buffer->bytesused);
+			if( buffer->bytesused > 200*1024 ) {
+				log_qcy(DEBUG_WARNING, "+++++++++++++++++++++++++++++realtek video frame size=%d!!!!!!", buffer->bytesused);
+//				rts_av_put_buffer(buffer);
+//				continue;
+			}
+        	if( _config_.memory_mode == MEMORY_MODE_SHARED ) {
+				packet = av_buffer_get_empty(&vbuffer, &qos.buffer_overrun, &qos.buffer_success);
+				if( packet == NULL ) {
+					log_qcy(DEBUG_INFO, "-------------VIDEO buffer overrun!!!---");
+					rts_av_put_buffer(buffer);
+					continue;
+				}
+	    		packet->data = malloc( buffer->bytesused );
+	    		if( packet->data == NULL) {
+	    			log_qcy(DEBUG_WARNING, "allocate memory failed in video buffer, size=%d", buffer->bytesused);
+	    			rts_av_put_buffer(buffer);
+	    			continue;
+	    		}
+	    		memcpy(packet->data, buffer->vm_addr, buffer->bytesused);
+        	}
+        	else {
+        		packet = &(vbuffer.packet[0]);
+        		packet->data = buffer->vm_addr;
+        	}
     		if( (stream.realtek_stamp == 0) && (stream.unix_stamp == 0) ) {
     			stream.realtek_stamp = buffer->timestamp;
     			stream.unix_stamp = time_get_now_stamp();
     		}
     		write_video_info( buffer, &packet->info);
-    		rts_av_put_buffer(buffer);
     		for(i=0;i<MAX_RECORDER_JOB;i++) {
 				if( misc_get_bit(info.status2, RUN_MODE_SAVE+i) ) {
 					ret = write_video_buffer(packet, MSG_RECORDER_VIDEO_DATA, SERVER_RECORDER, i);
@@ -737,7 +730,11 @@ static int *video_main_func(void* arg)
 						}
 					}
 					else {
-						av_packet_add(packet);
+						if( _config_.memory_mode == MEMORY_MODE_SHARED ) {
+							av_packet_add(packet);
+							if( _config_.overrun )
+								log_qcy(DEBUG_INFO, "+++++++after overun, added one video data for recorder+++++");
+						}
 						qos.failed_send[RUN_MODE_SAVE+i] = 0;
 					}
 				}
@@ -758,29 +755,34 @@ static int *video_main_func(void* arg)
 							log_qcy(DEBUG_WARNING, "----shut down video miss stream due to long overrun!------");
 						}
 					}
+					else if( ret == MISS_LOCAL_ERR_MSG_BUFF_FULL ) {
+
+					}
 					else if( ret == 0) {
-						av_packet_add(packet);
+						if( _config_.memory_mode == MEMORY_MODE_SHARED ) {
+							if( _config_.overrun )
+								log_qcy(DEBUG_INFO, "+++++++after overun, added one video data for miss+++++");
+							av_packet_add(packet);
+						}
 						qos.failed_send[RUN_MODE_MISS+i] = 0;
 					}
 				}
     		}
-/*    		if( misc_get_bit(info.status2, RUN_MODE_MOTION) && config.md.enable ) {
-    			ret = write_video_buffer(packet, MSG_VIDEO_SPD_VIDEO_DATA, SERVER_VIDEO, 0);
-    			if( ret ) {
-
-    			}
-    			else {
-    				av_packet_add(packet);
-    			}
-    		}
-*/
     		if( misc_get_bit(info.status2, RUN_MODE_MICLOUD) ) {
-      			if( write_video_buffer(packet, MSG_MICLOUD_VIDEO_DATA, SERVER_MICLOUD, 0) != 0 )
+      			if( write_video_buffer(packet, MSG_MICLOUD_VIDEO_DATA, SERVER_MICLOUD, 0) != 0 ) {
     				log_qcy(DEBUG_SERIOUS, "Micloud ring buffer push failed!");
-    			else
-					av_packet_add(packet);
+      			}
+    			else {
+    				if( _config_.memory_mode == MEMORY_MODE_SHARED ) {
+    					av_packet_add(packet);
+    				}
+    			}
     		}
-			av_packet_check(packet);
+    		if( _config_.memory_mode == MEMORY_MODE_SHARED) {
+    			av_packet_check(packet);
+    		}
+			packet = NULL;
+   			rts_av_put_buffer(buffer);
     	}
     }
     //release
@@ -939,7 +941,7 @@ static int stream_stop(void)
 static int video_init(void)
 {
 	int ret;
-	struct rts_video_mjpeg_ctrl *mjpeg_ctrl = NULL;
+	struct rts_video_h264_ctrl *ctrl = NULL;
 	stream_init();
 	stream.isp = rts_av_create_isp_chn(&config.isp.isp_attr);
 	if (stream.isp < 0) {
@@ -953,12 +955,27 @@ static int video_init(void)
 		return -1;
 	}
 	log_qcy(DEBUG_SERIOUS, "h264 chnno:%d", stream.h264);
+	ret = rts_av_query_h264_ctrl(stream.h264, &ctrl);
+	if (ret) {
+		log_qcy(DEBUG_WARNING, "query h264 ctrl fail, ret = %d\n", ret);
+	    return -1;
+	}
+	ctrl->bitrate_mode = RTS_BITRATE_MODE_CBR;
+	ctrl->max_bitrate = config.h264.h264_ctrl.max_bitrate;
+	ctrl->min_bitrate = config.h264.h264_ctrl.min_bitrate;
+	ret = rts_av_set_h264_ctrl(ctrl);
+	if(ret) {
+		log_qcy(DEBUG_WARNING, "set h264 ctrl fail, ret = %d\n", ret);
+	    return -1;
+	}
 	config.profile.profile[config.profile.quality].fmt = RTS_V_FMT_YUV420SEMIPLANAR;
 	ret = rts_av_set_profile(stream.isp, &config.profile.profile[config.profile.quality]);
 	if (ret) {
 		log_qcy(DEBUG_SERIOUS, "set isp profile fail, ret = %d", ret);
+		RTS_SAFE_RELEASE(ctrl, rts_av_release_h264_ctrl);
 		return -1;
 	}
+	RTS_SAFE_RELEASE(ctrl, rts_av_release_h264_ctrl);
    	//osd
 	if( config.osd.enable ) {
         stream.osd = rts_av_create_osd_chn();
@@ -992,11 +1009,6 @@ static int video_init(void)
         return -1;
     }
     log_qcy(DEBUG_INFO, "jpg chnno:%d", stream.jpg);
-    ret = rts_av_query_mjpeg_ctrl(stream.jpg, &mjpeg_ctrl);
-    if (RTS_IS_ERR(ret)) {
-    	log_qcy(DEBUG_SERIOUS, "rts_av_query_mjpeg_ctrl failed, ret = %d\n", ret);
-        return -1;
-    }
     ret = rts_av_bind(stream.isp, stream.jpg);
    	if (ret) {
    		log_qcy(DEBUG_SERIOUS, "fail to bind isp and jpg, ret %d", ret);
@@ -1026,11 +1038,14 @@ static int video_init(void)
 
 static void write_video_info(struct rts_av_buffer *data, av_data_info_t *info)
 {
+	struct rts_av_profile profile;
+	rts_av_get_profile(stream.isp, &profile);
 	info->flag = data->flags;
 	info->frame_index = data->frame_idx;
 //	info->timestamp = data->timestamp / 1000;
 	info->timestamp = ( ( data->timestamp - stream.realtek_stamp ) / 1000) + stream.unix_stamp * 1000;
-	info->fps = config.profile.profile[config.profile.quality].video.denominator;
+//	info->fps = config.profile.profile[config.profile.quality].video.denominator;
+	info->fps = profile.video.denominator;
 	info->width = config.profile.profile[config.profile.quality].video.width;
 	info->height = config.profile.profile[config.profile.quality].video.height;
    	info->flag |= FLAG_STREAM_TYPE_LIVE << 11;
@@ -1043,12 +1058,7 @@ static void write_video_info(struct rts_av_buffer *data, av_data_info_t *info)
     	info->flag |= FLAG_FRAME_TYPE_IFRAME << 0;
     else
     	info->flag |= FLAG_FRAME_TYPE_PBFRAME << 0;
-    if( config.profile.quality==0 )
-        info->flag |= FLAG_RESOLUTION_VIDEO_360P << 17;
-    else if( config.profile.quality==1 )
-        info->flag |= FLAG_RESOLUTION_VIDEO_480P << 17;
-    else if( config.profile.quality==2 )
-        info->flag |= FLAG_RESOLUTION_VIDEO_1080P << 17;
+    info->flag |= FLAG_RESOLUTION_VIDEO_1080P << 17;
     info->size = data->bytesused;
 }
 
@@ -1062,9 +1072,17 @@ static int write_video_buffer( av_packet_t *data, int id, int target, int channe
 	msg.arg_in.wolf = channel;
 	msg.arg_in.handler = session[channel];
 	msg.message = id;
-	msg.arg = data;
-	msg.arg_size = 0;	//make sure this is 0 for non-deep-copy
-	msg.extra_size = 0;
+	if( _config_.memory_mode == MEMORY_MODE_SHARED ) {
+		msg.arg = data;
+		msg.arg_size = 0;	//make sure this is 0 for non-deep-copy
+		msg.extra_size = 0;
+	}
+	else {
+		msg.arg = data->data;
+		msg.arg_size = data->info.size;
+		msg.extra = &(data->info);
+		msg.extra_size = sizeof(data->info);
+	}
 	if( target == SERVER_MISS )
 		ret = server_miss_video_message(&msg);
 	else if( target == SERVER_MICLOUD )
@@ -1555,7 +1573,8 @@ static void task_stop(void)
 			break;
 		case STATUS_START:
 		case STATUS_RUN:
-			if( info.task.msg.arg_in.cat > 0 ) {
+			if( (info.task.msg.arg_in.cat > 0) ||
+					(!info.task.msg.arg_in.duck && (info.task.msg.sender == SERVER_RECORDER) ) ) {	//real stop == 0
 				goto exit;
 				break;
 			}
@@ -1681,12 +1700,9 @@ static void *server_func(void)
 {
     signal(SIGINT, server_thread_termination);
     signal(SIGTERM, server_thread_termination);
-    signal(SIGSEGV, signal_handler);
-    signal(SIGFPE,  signal_handler);
-    signal(SIGBUS,  signal_handler);
 	misc_set_thread_name("server_video");
 	pthread_detach(pthread_self());
-	msg_buffer_init2(&message, MSG_BUFFER_OVERFLOW_NO, &mutex);
+	msg_buffer_init2(&message, _config_.msg_overrun, &mutex);
 	info.init = 1;
 	//default task
 	info.task.func = task_default;

@@ -353,7 +353,6 @@ int video_osd_init(video_osd_config_t *ctrl, int stream, int width, int height)
 	for (i = 0; i < sizeof(patt); i++) {
 		osd_load_char( (unsigned short)patt[i], osd_run.ipattern + osd_run.pixel_size * osd_run.pixel_size / 2 * i);
 	}
-    RTS_SAFE_RELEASE(osd_run.osd_attr, rts_av_release_osd2);
 	ret = rts_av_query_osd2(osd_run.stream, &osd_run.osd_attr);
 	if (ret < 0) {
 		log_qcy(DEBUG_SERIOUS, "%s, query osd2 attr fail\n", __func__);

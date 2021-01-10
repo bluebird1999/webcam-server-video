@@ -106,6 +106,7 @@ typedef struct video_isp_config_t {
 	int						noise_reduction;
 	int						in_out_door_mode;
 	int						detail_enhancement;
+	int						d3nr;
 }video_isp_config_t;
 
 typedef struct video_h264_config_t {
