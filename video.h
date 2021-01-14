@@ -37,6 +37,7 @@
 #define		VIDEO_EXIT_CONDITION				( (1 << SERVER_RECORDER) || (1 << SERVER_MISS) )
 
 #define		VIDEO_ISP_IR_AUTO	2
+#define		VIDEO_MAX_JPEG_SIZE			128*1024
 /*
  * structure
  */

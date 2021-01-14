@@ -155,6 +155,7 @@ typedef struct video_jpg_config_t {
 	int		enable;
 	char	image_path[MAX_SYSTEM_STRING_SIZE];
 	struct rts_jpgenc_attr		jpg_ctrl;
+	int		compress_rate;
 } video_jpg_config_t;
 
 typedef struct video_3actrl_config_t {

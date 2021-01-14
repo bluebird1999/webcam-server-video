@@ -91,6 +91,7 @@ static int stream_stop(void);
 static int video_init(void);
 static int md_init_scheduler(void);
 static int *video_md_func(void *arg);
+static void notify_device_server(int message, int arg_cat, device_iot_config_t *tmp);
 /*
  * %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
  * %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -100,6 +101,19 @@ static int *video_md_func(void *arg);
 /*
  * helper
  */
+static void notify_device_server(int message, int arg_cat, device_iot_config_t *tmp)
+{
+	message_t msg;
+	msg_init(&msg);
+
+	msg.message = message;
+	msg.sender = msg.receiver = SERVER_VIDEO;
+	msg.arg = tmp;
+	msg.arg_in.cat = arg_cat;
+	msg.arg_size = sizeof(device_iot_config_t);
+	manager_common_send_message(SERVER_DEVICE, &msg);
+}
+
 static int video_check_sd(void)
 {
 	if( access("/mnt/media/normal", F_OK) ) {
@@ -407,14 +421,26 @@ static int video_thumbnail(message_t *msg)
 static void video_mjpeg_func(void *priv, struct rts_av_profile *profile, struct rts_av_buffer *buffer)
 {
     FILE *pfile = NULL;
+    if( buffer->vm_addr == NULL ) {
+		log_qcy(DEBUG_WARNING, "video JPEG buffer NULL error!");
+		return;
+    }
+    if( buffer->bytesused > VIDEO_MAX_JPEG_SIZE ) {
+		log_qcy(DEBUG_WARNING, "video JPEG size %d bigger than limit!", buffer->bytesused);
+		return;
+    }
     pfile = fopen((char*)priv, "wb");
     if (!pfile) {
 		log_qcy(DEBUG_WARNING, "open video jpg snapshot file %s fail\n", (char*)priv);
 		return;
     }
+    log_qcy(DEBUG_INFO, "---+++VIDEO jpeg function, file pt= %p, data-addr=%p, size=%d", pfile,
+    		buffer->vm_addr, buffer->bytesused);
 //    if( !video_check_sd() )
    	fwrite(buffer->vm_addr, 1, buffer->bytesused, pfile);
+    log_qcy(DEBUG_INFO, "---+++VIDEO jpeg function, write success!");
     RTS_SAFE_RELEASE(pfile, fclose);
+    log_qcy(DEBUG_INFO, "---+++VIDEO jpeg function, clean success!");
     return;
 }
 
@@ -667,7 +693,7 @@ static int *video_main_func(void* arg)
     	st = info.status;
     	if( st != STATUS_START && st != STATUS_RUN )
     		break;
-    	else if( st == STATUS_START )
+    	else if( st != STATUS_RUN )
     		continue;
     	usleep(1000);
     	ret = rts_av_poll(ctrl.h264);
@@ -689,10 +715,10 @@ static int *video_main_func(void* arg)
     			rts_av_put_buffer(buffer);
     			continue;
         	}
-			if( buffer->bytesused > 200*1024 ) {
+			if( buffer->bytesused > MAX_VIDEO_FRAME_SIZE ) {
 				log_qcy(DEBUG_WARNING, "+++++++++++++++++++++++++++++realtek video frame size=%d!!!!!!", buffer->bytesused);
-//				rts_av_put_buffer(buffer);
-//				continue;
+				rts_av_put_buffer(buffer);
+				continue;
 			}
         	if( _config_.memory_mode == MEMORY_MODE_SHARED ) {
 				packet = av_buffer_get_empty(&vbuffer, &qos.buffer_overrun, &qos.buffer_success);
@@ -806,6 +832,7 @@ static int stream_init(void)
 static int stream_destroy(void)
 {
 	int ret = 0;
+	device_iot_config_t tmp;
 	if (stream.isp >= 0) {
 		rts_av_destroy_chn(stream.isp);
 		stream.isp = -1;
@@ -822,6 +849,11 @@ static int stream_destroy(void)
 		rts_av_destroy_chn(stream.jpg);
 		stream.jpg = -1;
 	}
+
+	memset(&tmp, 0 , sizeof(device_iot_config_t));
+	tmp.day_night_mode = DAY_NIGHT_OFF;
+	notify_device_server(MSG_DEVICE_CTRL_DIRECT, DEVICE_CTRL_DAY_NIGHT_MODE, &tmp);
+
 	return ret;
 }
 
@@ -942,6 +974,7 @@ static int video_init(void)
 {
 	int ret;
 	struct rts_video_h264_ctrl *ctrl = NULL;
+	struct rts_video_mjpeg_ctrl *mjpeg_ctrl = NULL;
 	stream_init();
 	stream.isp = rts_av_create_isp_chn(&config.isp.isp_attr);
 	if (stream.isp < 0) {
@@ -1014,25 +1047,33 @@ static int video_init(void)
    		log_qcy(DEBUG_SERIOUS, "fail to bind isp and jpg, ret %d", ret);
    		return -1;
    	}
+   	ret = rts_av_query_mjpeg_ctrl(stream.jpg, &mjpeg_ctrl);
+    if (RTS_IS_ERR(ret)) {
+    	rts_av_release_mjpeg_ctrl(mjpeg_ctrl);
+    	RTS_INFO("rts_av_query_mjpeg_ctrl failed, ret = %d\n", ret);
+        return -1;
+    }
+    mjpeg_ctrl->normal_compress_rate = config.jpg.compress_rate;
+    ret = rts_av_set_mjpeg_ctrl(mjpeg_ctrl);
+    if (RTS_IS_ERR(ret)) {
+    	rts_av_release_mjpeg_ctrl(mjpeg_ctrl);
+    	log_qcy(DEBUG_WARNING, "rts_av_set_mjpeg_ctrl failed, ret = %d", ret);
+        return -1;
+    }
+    rts_av_release_mjpeg_ctrl(mjpeg_ctrl);
+   	//**
    	md_init_scheduler();
 	video_isp_init(&config.isp);
 	//nodify device
-	message_t dev_send_msg;
-	device_iot_config_t device_iot_tmp;
-	msg_init(&dev_send_msg);
-	memset(&device_iot_tmp, 0 , sizeof(device_iot_config_t));
-	if(config.isp.ir_mode == VIDEO_ISP_IR_AUTO)
-		device_iot_tmp.day_night_mode = DAY_NIGHT_AUTO;
-	else if(config.isp.ir_mode == RTS_ISP_IR_DAY)
-		device_iot_tmp.day_night_mode = DAY_NIGHT_OFF;
-	else if(config.isp.ir_mode == RTS_ISP_IR_NIGHT)
-		device_iot_tmp.day_night_mode = DAY_NIGHT_ON;
-	dev_send_msg.message = MSG_DEVICE_CTRL_DIRECT;
-	dev_send_msg.sender = dev_send_msg.receiver = SERVER_VIDEO;
-	dev_send_msg.arg = (void*)&device_iot_tmp;
-	dev_send_msg.arg_in.cat = DEVICE_CTRL_DAY_NIGHT_MODE;
-	dev_send_msg.arg_size = sizeof(device_iot_config_t);
-	manager_common_send_message(SERVER_DEVICE, &dev_send_msg);
+	device_iot_config_t tmp;
+	memset(&tmp, 0 , sizeof(device_iot_config_t));
+ 	if(config.isp.ir_mode == VIDEO_ISP_IR_AUTO)
+		tmp.day_night_mode = DAY_NIGHT_AUTO;
+ 	else if(config.isp.ir_mode == RTS_ISP_IR_DAY)
+		tmp.day_night_mode = DAY_NIGHT_OFF;
+ 	else if(config.isp.ir_mode == RTS_ISP_IR_NIGHT)
+		tmp.day_night_mode = DAY_NIGHT_ON;
+	notify_device_server(MSG_DEVICE_CTRL_DIRECT, DEVICE_CTRL_DAY_NIGHT_MODE, &tmp);
 	return 0;
 }
 

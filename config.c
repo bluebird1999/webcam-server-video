@@ -176,6 +176,7 @@ static config_map_t video_config_jpg_map[] = {
     {"enable", 		&(video_config.jpg.enable), 				cfg_u32, 1,0,0,1,},
     {"rotation",	&(video_config.jpg.jpg_ctrl.rotation),		cfg_u32, 0,0,0,4,},
 	{"image_path",	&(video_config.jpg.image_path), 			cfg_string, "0",0,0,32,},
+	{"compress_rate",	&(video_config.jpg.compress_rate), 		cfg_u32, 2,0,2,15,},
     {NULL,},
 };
 
