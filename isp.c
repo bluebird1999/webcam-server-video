@@ -119,6 +119,7 @@ int video_isp_init(video_isp_config_t *ctrl)
 	ret |= video_isp_set_attr(RTS_VIDEO_CTRL_ID_NOISE_REDUCTION, ctrl->noise_reduction);
 	ret |= video_isp_set_attr(RTS_VIDEO_CTRL_ID_IN_OUT_DOOR_MODE, ctrl->in_out_door_mode);
 	ret |= video_isp_set_attr(RTS_VIDEO_CTRL_ID_DETAIL_ENHANCEMENT, ctrl->detail_enhancement);
+	ret |= video_isp_set_attr(RTS_VIDEO_CTRL_ID_3DNR, ctrl->d3nr);
 	return ret;
 }
 

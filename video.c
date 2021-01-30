@@ -434,7 +434,7 @@ static void video_mjpeg_func(void *priv, struct rts_av_profile *profile, struct 
 		log_qcy(DEBUG_WARNING, "open video jpg snapshot file %s fail\n", (char*)priv);
 		return;
     }
-    log_qcy(DEBUG_INFO, "---+++VIDEO jpeg function, file pt= %p, data-addr=%p, size=%d", pfile,
+    log_qcy(DEBUG_INFO, "---+++VIDEO jpeg function, file pt= %p, path=%s, data-addr=%p, size=%d", pfile, (char*)priv,
     		buffer->vm_addr, buffer->bytesused);
 //    if( !video_check_sd() )
    	fwrite(buffer->vm_addr, 1, buffer->bytesused, pfile);
@@ -993,9 +993,15 @@ static int video_init(void)
 		log_qcy(DEBUG_WARNING, "query h264 ctrl fail, ret = %d\n", ret);
 	    return -1;
 	}
-	ctrl->bitrate_mode = RTS_BITRATE_MODE_CBR;
-	ctrl->max_bitrate = config.h264.h264_ctrl.max_bitrate;
-	ctrl->min_bitrate = config.h264.h264_ctrl.min_bitrate;
+	ctrl->gop_mode = config.h264.h264_ctrl.gop_mode;
+	ctrl->max_qp = config.h264.h264_ctrl.max_qp;
+	ctrl->min_qp = config.h264.h264_ctrl.min_qp;
+	ctrl->bitrate_mode = config.h264.h264_ctrl.bitrate_mode;
+	if(ctrl->bitrate_mode == RTS_BITRATE_MODE_C_VBR)
+	{
+		ctrl->max_bitrate = config.h264.h264_ctrl.max_bitrate;
+		ctrl->min_bitrate = config.h264.h264_ctrl.min_bitrate;
+	}
 	ret = rts_av_set_h264_ctrl(ctrl);
 	if(ret) {
 		log_qcy(DEBUG_WARNING, "set h264 ctrl fail, ret = %d\n", ret);
@@ -1041,7 +1047,7 @@ static int video_init(void)
     	log_qcy(DEBUG_SERIOUS, "fail to create jpg chn, ret = %d\n", stream.jpg);
         return -1;
     }
-    log_qcy(DEBUG_INFO, "jpg chnno:%d", stream.jpg);
+    log_qcy(DEBUG_INFO, "jpg chnno:%d stream.isp:%d", stream.jpg, stream.isp);
     ret = rts_av_bind(stream.isp, stream.jpg);
    	if (ret) {
    		log_qcy(DEBUG_SERIOUS, "fail to bind isp and jpg, ret %d", ret);
@@ -1479,6 +1485,7 @@ static int server_restart(void)
 static void task_control_ext(void)
 {
 	static int para_set = 0;
+	static int wolf_tmp = 0;
 	int temp = 0;
 	message_t msg;
 	/**************************/
@@ -1501,9 +1508,9 @@ static void task_control_ext(void)
 						config.osd.enable = temp;
 						log_qcy(DEBUG_INFO, "changed the osd switch = %d", config.osd.enable);
 						video_config_video_set(CONFIG_VIDEO_OSD,  &config.osd);
-						msg.arg_in.wolf = 1;
-						msg.arg = &temp;
-						msg.arg_size = sizeof(temp);
+						wolf_tmp = 1;
+//						msg.arg = &temp;
+//						msg.arg_size = sizeof(temp);
 					}
 				}
 				para_set = 1;
@@ -1521,21 +1528,24 @@ static void task_control_ext(void)
 				info.status = STATUS_RESTART;
 			else {
 				if( info.task.start == STATUS_IDLE )
+				{
 					goto exit;
+				}
 				else
 					info.status = STATUS_START;
 			}
 			break;
 		case STATUS_START:
 			server_start();
+			break;
 		case STATUS_RUN:
 			if( !para_set ) {
 				if( info.task.msg.arg_in.cat == VIDEO_PROPERTY_TIME_WATERMARK ) {
 					temp = *((int*)(info.task.msg.arg));
 					if( temp == config.osd.enable ) {
-						msg.arg_in.wolf = 0;
-						msg.arg = &temp;
-						msg.arg_size = sizeof(temp);
+						wolf_tmp = 0;
+//						msg.arg = &temp;
+//						msg.arg_size = sizeof(temp);
 						goto exit;
 					}
 				}
@@ -1543,7 +1553,9 @@ static void task_control_ext(void)
 			}
 			else {
 				if( misc_get_bit( info.thread_start, THREAD_VIDEO ) )
+				{
 					goto exit;
+				}
 			}
 			break;
 		case STATUS_RESTART:
@@ -1560,7 +1572,11 @@ static void task_control_ext(void)
 	}
 	return;
 exit:
+	msg.arg_in.wolf = wolf_tmp;
+	msg.arg = &config.osd.enable;
+	msg.arg_size = sizeof(config.osd.enable);
 	manager_common_send_message(info.task.msg.receiver, &msg);
+	wolf_tmp = 0;
 	para_set = 0;
 	info.task.func = &task_default;
 	info.msg_lock = 0;
@@ -1722,7 +1738,6 @@ static void task_exit(void)
 			video_broadcast_thread_exit();
 			if( !info.thread_start )
 				info.status = EXIT_STAGE2;
-			break;
 			break;
 		case EXIT_STAGE2:
 			server_release_2();

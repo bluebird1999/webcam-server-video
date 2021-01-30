@@ -313,7 +313,7 @@ int video_osd_init(video_osd_config_t *ctrl, int stream, int width, int height)
 	osd_run.height = height;
 	if( width >= 1920 ) {
 		osd_run.pixel_size = 48;
-		osd_run.offset_x = 12;
+		osd_run.offset_x = 50;
 		osd_run.offset_y = 10;
 	}
 	else if( width >= 1280 ) {
